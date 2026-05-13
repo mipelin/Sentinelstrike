@@ -1,0 +1,26 @@
+{
+  "mission_id": "demo_001",
+  "launch_point": {
+    "lat": 38.0,
+    "lon": -8.0,
+    "alt_m": 0
+  },
+  "area_of_interest": [
+    {"lat": 38.0000, "lon": -8.0000, "alt_m": 80},
+    {"lat": 38.0000, "lon": -7.9980, "alt_m": 80},
+    {"lat": 38.0020, "lon": -7.9980, "alt_m": 80},
+    {"lat": 38.0020, "lon": -8.0000, "alt_m": 80}
+  ],
+  "search_pattern": "lawnmower",
+  "constraints": {
+    "max_altitude_m": 120,
+    "min_altitude_m": 40,
+    "max_range_km": 5,
+    "human_authorization_required": true,
+    "lost_link_behavior": "return_home",
+    "search_spacing_m": 50,
+    "default_altitude_m": 80,
+    "default_speed_mps": 10,
+    "max_waypoints": 100
+  }
+}

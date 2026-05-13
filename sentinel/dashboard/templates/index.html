@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ONS Sentinel Strike Console</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+    <header class="topbar">
+        <div>
+            <p class="eyebrow">Sentinel Strike</p>
+            <h1>ISR Operations Console</h1>
+        </div>
+        <div class="controls">
+            <span id="mode-badge" class="mode-badge mode-replay">Replay</span>
+            <select id="run-select"><option value="">Loading runs...</option></select>
+            <button id="btn-load">Load Run</button>
+            <button id="btn-latest">Latest</button>
+            <button id="btn-live">Live Mission</button>
+            <button id="btn-stop-live" class="danger" style="display:none">Stop</button>
+        </div>
+    </header>
+
+    <main class="console-grid">
+        <section class="panel video-panel">
+            <div class="panel-header">
+                <h2>Sensor Feed</h2>
+                <div class="panel-meta">
+                    <span id="video-frame-label">Frame --</span>
+                    <span id="video-time-label">--</span>
+                </div>
+            </div>
+            <div class="video-shell">
+                <img id="video-feed" alt="Annotated mission video" />
+                <div id="video-overlay"></div>
+            </div>
+        </section>
+
+        <section class="panel side-panel">
+            <div class="panel-header">
+                <h2>Targets</h2>
+                <span id="target-summary">0 active</span>
+            </div>
+            <div id="targets-content" class="stack scrollable"></div>
+            <div class="panel-header subheader">
+                <h2>Operator Queue</h2>
+            </div>
+            <div id="queue-content" class="stack scrollable compact"></div>
+            <div class="panel-header subheader">
+                <h2>Alerts</h2>
+            </div>
+            <div id="alerts-content" class="stack scrollable compact"></div>
+        </section>
+
+        <section class="panel map-panel">
+            <div class="panel-header">
+                <h2>Tactical Map</h2>
+                <span id="map-summary">UAV / observations</span>
+            </div>
+            <div id="map"></div>
+        </section>
+
+        <section class="panel telemetry-panel">
+            <div class="panel-header">
+                <h2>UAV Telemetry</h2>
+            </div>
+            <div id="telemetry-content" class="telemetry-grid"></div>
+        </section>
+
+        <section class="panel replay-panel">
+            <div class="panel-header">
+                <h2>Replay Timeline</h2>
+                <span id="timeline-count">0 events</span>
+            </div>
+            <div class="replay-controls">
+                <button id="btn-play">Play</button>
+                <button id="btn-pause">Pause</button>
+                <label>Speed</label>
+                <select id="speed-select">
+                    <option value="0.5">0.5x</option>
+                    <option value="1" selected>1x</option>
+                    <option value="2">2x</option>
+                    <option value="4">4x</option>
+                </select>
+                <input id="scrubber" type="range" min="0" max="0" value="0" />
+                <span id="scrubber-label">0 / 0</span>
+            </div>
+            <div id="timeline-content" class="timeline-strip scrollable"></div>
+        </section>
+    </main>
+
+    <footer class="statusbar">
+        <span id="status-bar">Ready</span>
+    </footer>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+</html>

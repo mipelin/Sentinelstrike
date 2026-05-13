@@ -1,0 +1,53 @@
+[Unit]
+Description=ONS Sentinel Core - Jetson Edge Agent
+Documentation=https://github.com/example/ons-sentinel-core
+After=network.target mavlink-router.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=jetson
+WorkingDirectory=/home/jetson/ons-sentinel-core
+Environment=PYTHONUNBUFFERED=1
+Environment=OMP_NUM_THREADS=4
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=CUDA_VISIBLE_DEVICES=0
+
+# Adjust venv path to match your Jetson setup
+ExecStart=/home/jetson/ons-sentinel-core/.venv/bin/python3 \
+    -m apps.edge_agent.run_jetson_agent \
+    --config configs/jetson.yaml \
+    --mission missions/demo_search_area.json
+
+# Graceful shutdown: SIGTERM, wait up to 30s, then SIGKILL
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Prevent restart loops
+StartLimitInterval=300
+StartLimitBurst=3
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/jetson/ons-sentinel-core/runs
+ReadOnlyPaths=/home/jetson/ons-sentinel-core/configs
+ReadOnlyPaths=/home/jetson/ons-sentinel-core/missions
+ReadOnlyPaths=/home/jetson/ons-sentinel-core/data
+
+# Resource limits
+MemoryMax=4G
+CPUQuota=200%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ons-sentinel
+
+[Install]
+WantedBy=multi-user.target

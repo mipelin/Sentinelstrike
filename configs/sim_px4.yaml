@@ -1,0 +1,37 @@
+system:
+  mode: SIMULATION_MODE
+  vehicle_id: uav_001
+  mission_id: px4_demo_001
+  log_level: INFO
+
+recorder:
+  enabled: true
+  output_dir: runs
+  record_video: false
+
+simulation:
+  link_loss_enabled: false
+  link_loss_start_after_s: 60
+  link_loss_duration_s: 45
+
+mavlink:
+  enabled: true
+  backend: mavsdk
+  connection_url: udpin://0.0.0.0:14540
+  allow_arm: true
+  allow_takeoff: true
+  allow_real_backend: true
+  max_takeoff_altitude_m: 20
+  max_goto_distance_m: 1000
+  connect_timeout_s: 20
+  default_waypoint_altitude_m: 50
+  default_speed_mps: 10
+
+sitl_local_mission:
+  enabled: true
+  size_m: 80
+  altitude_m: 30
+  spacing_m: 30
+  max_range_km: 2
+  default_speed_mps: 5
+  max_waypoint_distance_m: 500

@@ -1,0 +1,158 @@
+# Jetson deployment configuration
+# For running on NVIDIA Jetson (Orin, Xavier, Nano) as a drone companion computer
+
+system:
+  mode: EDGE_MODE
+  vehicle_id: uav_001
+  mission_id: jetson_mission
+  log_level: INFO
+
+recorder:
+  enabled: true
+  output_dir: runs
+  record_video: false
+
+simulation:
+  link_loss_enabled: false
+
+mavlink:
+  enabled: true
+  backend: mavsdk
+  connection_url: udpin://0.0.0.0:14540
+  allow_arm: false
+  allow_takeoff: false
+  allow_real_backend: true
+  max_takeoff_altitude_m: 30
+  max_goto_distance_m: 1000
+  connect_timeout_s: 15
+  default_waypoint_altitude_m: 50
+  default_speed_mps: 10
+
+perception:
+  enabled: true
+  backend: yolo
+  model_path: yolov8n.pt
+  source: data/videos/demo.mp4
+  output_annotated_video: false
+  confidence_threshold: 0.35
+  frame_stride: 1
+  max_frames: null
+  classes:
+    - person
+    - car
+    - truck
+    - bus
+  save_detections_jsonl: true
+  device: cuda
+  image_size: 640
+
+tracker:
+  enabled: true
+  algorithm: simple_iou
+  iou_threshold: 0.2
+  max_lost_frames: 15
+  min_confidence: 0.0
+  save_tracks_jsonl: true
+  prediction_enabled: true
+  distance_threshold_px: 120
+  iou_weight: 0.7
+  distance_weight: 0.3
+  suppress_stationary_after_s: 10.0
+  stationary_speed_threshold_px_s: 3.0
+  fps: 10.0
+  min_hits_to_confirm: 3
+  publish_tentative_tracks: false
+  fast_confirm_confidence: 0.85
+  reacquire_window_frames: 20
+  duplicate_distance_px: 80
+  duplicate_iou_threshold: 0.1
+  class_aware_matching: true
+  confidence_ema_alpha: 0.35
+  bbox_smoothing_enabled: true
+  bbox_ema_alpha: 0.35
+
+geolocalizer:
+  enabled: true
+  method: flat_ground_pinhole_v1
+  assumed_ground_alt_m: 0.0
+  default_accuracy_estimate_m: 35.0
+  min_track_confidence: 0.0
+  save_geo_observations_jsonl: true
+  publish_active_only: true
+  min_publish_interval_s: 2.0
+  min_movement_m: 5.0
+  max_observations_per_track: 50
+  camera:
+    camera_id: cam_001
+    width_px: 640
+    height_px: 480
+    horizontal_fov_deg: 70.0
+    vertical_fov_deg: 45.0
+    pitch_deg: -45.0
+    yaw_offset_deg: 0.0
+    roll_deg: 0.0
+    mounting: fixed_forward_down
+
+tak:
+  enabled: true
+  mode: dry_run
+  cot_host: 127.0.0.1
+  cot_port: 8087
+  callsign: ONS-UAV-001
+  team: Cyan
+  role: UAV
+  stale_after_s: 120
+  save_tak_messages_jsonl: true
+  publish_vehicle_every_s: 5.0
+  publish_track_every_s: 3.0
+  max_messages_per_run: 1000
+
+operator:
+  enabled: true
+  operator_id: local_operator
+  simulator_mode: confirm_above_threshold
+  min_track_confidence_for_confirmation: 0.6
+  min_observation_confidence_for_orbit: 0.6
+  require_human_for_orbit: true
+  auto_reject_below_confidence: true
+
+safety:
+  enabled: true
+  abort_actions:
+    - HOLD
+    - LAND
+  return_to_safe_action: RETURN_HOME
+  link_loss_action: RETURN_HOME
+  low_battery_threshold_pct: 20.0
+  low_battery_action: RETURN_HOME
+  telemetry_stale_threshold: 5
+  telemetry_stale_action: HOLD
+  allow_disarm: false
+
+video:
+  source_type: rtsp
+  file_path: data/videos/demo.mp4
+  webcam_index: 0
+  rtsp_url: ""
+  reconnect_enabled: true
+  reconnect_interval_s: 5.0
+  frame_width: 640
+  frame_height: 480
+  target_fps: 10.0
+
+runtime:
+  target_fps: 10
+  max_frames: null
+  save_frames: false
+  save_latest_frame: true
+  save_annotated_every_n_frames: 10
+  disk_budget_mb: 2048
+  watchdog_sensor_stale_s: 5.0
+  watchdog_telemetry_stale_s: 10.0
+  watchdog_min_fps: 2.0
+  watchdog_ram_threshold_pct: 90.0
+  watchdog_disk_threshold_pct: 95.0
+  frame_timeout_s: 5.0
+  mavlink_telemetry_timeout_s: 3.0
+  log_rotation_enabled: true
+  log_max_size_mb: 512
