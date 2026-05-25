@@ -237,7 +237,7 @@ def _dynamic_routes() -> list[DynamicRoute]:
         DynamicRoute(
             name="actor_road_walker",
             category="human",
-            asset=MALE_VISITOR_WALK,
+            asset=MINGFEI_WALK,
             waypoints_xy=[(220.0, -350.0), (228.0, -393.0), (215.0, -391.0), (208.0, -388.0)],
             speeds_mps=[1.2, 1.0, 1.1, 1.0],
             pauses_s=[0.0, 0.0, 0.0, 0.0],
@@ -253,7 +253,7 @@ def _dynamic_routes() -> list[DynamicRoute]:
         DynamicRoute(
             name="actor_shed_walker",
             category="human",
-            asset=MALE_VISITOR_WALK,
+            asset=MINGFEI_WALK,
             waypoints_xy=[(216.0, -350.0), (221.0, -348.0), (219.5, -347.3)],
             speeds_mps=[0.9, 0.8, 0.9],
             pauses_s=[3.0, 4.0, 2.0],
