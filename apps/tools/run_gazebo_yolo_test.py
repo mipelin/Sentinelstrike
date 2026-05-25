@@ -1664,9 +1664,11 @@ def main() -> None:
                 first_person_frame = processed
 
         # Auto-lock follow target after tracker stabilizes
-        if follow_lock_pending and processed >= 10:
+        if follow_lock_pending and processed >= 25:
             target_found = any(d.get("track_id") == args.follow_track for d in detections)
             if target_found:
+                if flight_bridge:
+                    _enable_autonomy_safe(flight_bridge, args.min_airborne_alt)
                 follow_controller.lock_target(args.follow_track)
                 follow_lock_pending = False
                 print(f"Follow: auto-locked on {args.follow_track}")
@@ -1819,7 +1821,7 @@ def main() -> None:
             tele_snap = flight_bridge.telemetry_cache.snapshot()
             if tele_snap.mode is not None:
                 # If PX4 is not in OFFBOARD (e.g. manually switched to POSITION or stabilized/takeoff mode)
-                if tele_snap.mode.upper() not in ("OFFBOARD", "UNKNOWN", "DISARMED"):
+                if tele_snap.mode.upper() not in ("OFFBOARD", "UNKNOWN", "DISARMED", "HOLD", "TAKEOFF"):
                     print(f"\n[SAFETY] External manual stick / QGC pilot override detected (PX4 Mode: {tele_snap.mode})! Disengaging autonomy.")
                     flight_bridge.autonomy_enabled = False
                     if follow_controller:
