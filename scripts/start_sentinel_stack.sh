@@ -44,7 +44,7 @@ for arg in "$@"; do
         --isr-realistic-lite-v2) WORLD="${ISR_REALISTIC_LITE_V2_WORLD}"
                                  SPAWN_POSE="${PX4_GZ_MODEL_POSE:-220,-350,20,0,0,0}" ;;
         --isr-dynamic-v3)      WORLD="${ISR_DYNAMIC_V3_WORLD}"
-                               SPAWN_POSE="${PX4_GZ_MODEL_POSE:-220,-350,20,0,0,0}" ;;
+                                SPAWN_POSE="${PX4_GZ_MODEL_POSE:-220,-350,20,0,0,0}" ;;
         --no-qgc)              NO_QGC=1 ;;
         --validate)            VALIDATE=1 ;;
     esac

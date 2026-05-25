@@ -39,7 +39,12 @@ except ImportError:
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
-from apps.tools.place_real_terrain_vegetation import load_terrain, terrain_z
+from apps.tools.place_real_terrain_vegetation import load_terrain
+from apps.tools.generate_v3_world import (
+    calibration_for_key,
+    dynamic_vehicle_route_specs,
+    sample_terrain_z,
+)
 
 
 @dataclass
@@ -159,33 +164,49 @@ def _default_routes(density: str = "medium") -> list[Route]:
 def _dynamic_v3_routes() -> list[Route]:
     terrain = load_terrain("1779343687303")
 
-    def z_at(x: float, y: float) -> float:
-        return terrain_z(terrain, x, y)
+    def densify(spec: dict) -> list[Waypoint]:
+        calibration = calibration_for_key(spec["calibration_key"])
+        points = spec["waypoints_xy"]
+        speeds = spec["speeds_mps"]
+        pauses = spec["pauses_s"]
+        spacing = spec["sample_spacing_m"]
+        out: list[Waypoint] = []
+        for idx, start in enumerate(points):
+            end = points[(idx + 1) % len(points)]
+            seg_len = math.hypot(end[0] - start[0], end[1] - start[1])
+            steps = max(1, int(math.ceil(seg_len / spacing)))
+            yaw = math.atan2(end[1] - start[1], end[0] - start[0])
+            for step_idx in range(steps):
+                frac = step_idx / steps
+                x = start[0] + (end[0] - start[0]) * frac
+                y = start[1] + (end[1] - start[1]) * frac
+                z = sample_terrain_z(terrain, x, y) + calibration.z_offset_m
+                dwell_s = pauses[idx] if step_idx == 0 else 0.0
+                out.append(Waypoint(x=x, y=y, z=z, yaw=yaw, speed=speeds[idx], dwell_s=dwell_s))
+        first = points[0]
+        second = points[1] if len(points) > 1 else points[0]
+        out.append(
+            Waypoint(
+                x=first[0],
+                y=first[1],
+                z=sample_terrain_z(terrain, first[0], first[1]) + calibration.z_offset_m,
+                yaw=math.atan2(second[1] - first[1], second[0] - first[0]),
+                speed=speeds[0],
+                dwell_s=0.0,
+            )
+        )
+        return out
 
-    return [
-        Route(
-            model_name="vehicle_dynamic_pickup_001",
-            yaw_offset=0.0,
-            waypoints=[
-                Waypoint(x=220.0, y=-350.0, z=z_at(220.0, -350.0), yaw=0.0, speed=3.2, dwell_s=1.5),
-                Waypoint(x=228.0, y=-393.0, z=z_at(228.0, -393.0), yaw=0.0, speed=2.6),
-                Waypoint(x=215.0, y=-391.0, z=z_at(215.0, -391.0), yaw=0.0, speed=2.2),
-                Waypoint(x=208.0, y=-388.0, z=z_at(208.0, -388.0), yaw=0.0, speed=2.8),
-                Waypoint(x=220.0, y=-350.0, z=z_at(220.0, -350.0), yaw=0.0, speed=2.8),
-            ],
-        ),
-        Route(
-            model_name="vehicle_dynamic_truckbox_001",
-            yaw_offset=0.0,
-            waypoints=[
-                Waypoint(x=198.0, y=-379.0, z=z_at(198.0, -379.0), yaw=0.0, speed=1.8, dwell_s=3.0),
-                Waypoint(x=205.0, y=-383.0, z=z_at(205.0, -383.0), yaw=0.0, speed=2.1, dwell_s=1.5),
-                Waypoint(x=214.0, y=-389.0, z=z_at(214.0, -389.0), yaw=0.0, speed=1.9, dwell_s=2.0),
-                Waypoint(x=223.0, y=-394.0, z=z_at(223.0, -394.0), yaw=0.0, speed=2.2, dwell_s=4.0),
-                Waypoint(x=198.0, y=-379.0, z=z_at(198.0, -379.0), yaw=0.0, speed=2.2),
-            ],
-        ),
-    ]
+    routes: list[Route] = []
+    for spec in dynamic_vehicle_route_specs():
+        routes.append(
+            Route(
+                model_name=spec["model_name"],
+                yaw_offset=0.0,
+                waypoints=densify(spec),
+            )
+        )
+    return routes
 
 
 def _interpolate_route(route: Route, elapsed: float) -> tuple[float, float, float, float] | None:

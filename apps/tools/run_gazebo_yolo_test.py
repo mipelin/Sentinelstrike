@@ -123,6 +123,57 @@ def _draw_target_hud(
         cv2.putText(out, line, (x, y + i * 18), font, 0.4, color, 1, cv2.LINE_AA)
 
 
+def _check_airborne(flight_bridge, min_alt_m: float = 3.0) -> tuple[bool, str]:
+    """Check if the vehicle is armed and airborne. Returns (ok, reason)."""
+    if flight_bridge is None:
+        return False, "Flight bridge not connected"
+    tele = flight_bridge.telemetry_cache.snapshot()
+    if not tele.connected:
+        return False, "MAVSDK not connected"
+    if not tele.armed:
+        return False, "Vehicle DISARMED"
+    if tele.position is None or tele.position.alt_m is None:
+        return False, "Altitude unknown"
+    if tele.position.alt_m < min_alt_m:
+        return False, f"Altitude {tele.position.alt_m:.1f}m < {min_alt_m:.1f}m (landed?)"
+    return True, ""
+
+
+def _enable_autonomy_safe(flight_bridge, min_alt_m: float = 3.0) -> bool:
+    """Enable autonomy only if flight preconditions are met."""
+    ok, reason = _check_airborne(flight_bridge, min_alt_m)
+    if not ok:
+        print(f"[SAFETY] Follow/autonomy disabled: {reason}")
+        return False
+    flight_bridge.autonomy_enabled = True
+    return True
+
+
+def _draw_telemetry_hud(out: np.ndarray, flight_bridge) -> None:
+    """Draw telemetry state (armed, alt, mode) in top-left corner."""
+    if flight_bridge is None:
+        return
+    tele = flight_bridge.telemetry_cache.snapshot()
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    x, y = 10, 25
+    lines = []
+    if not tele.connected:
+        lines.append(("MAVSDK: NOT CONNECTED", (0, 0, 255)))
+    else:
+        armed_str = "ARMED" if tele.armed else "DISARMED"
+        armed_color = (0, 255, 0) if tele.armed else (0, 0, 255)
+        lines.append((f"{armed_str}", armed_color))
+        alt = tele.position.alt_m if tele.position else None
+        if alt is not None:
+            alt_color = (0, 255, 0) if alt >= 3.0 else (0, 0, 255)
+            lines.append((f"ALT: {alt:.1f}m", alt_color))
+        else:
+            lines.append(("ALT: --", (0, 0, 255)))
+        lines.append((f"MODE: {tele.mode}", (200, 200, 200)))
+    for i, (text, color) in enumerate(lines):
+        cv2.putText(out, text, (x, y + i * 20), font, 0.5, color, 1, cv2.LINE_AA)
+
+
 def _resolve_device(device: str) -> str:
     if device != "auto":
         return device
@@ -1001,6 +1052,8 @@ def main() -> None:
                         help="Standoff distance in meters (default: 10)")
     parser.add_argument("--standoff-altitude", type=float, default=10.0,
                         help="Standoff altitude above target in meters (default: 10)")
+    parser.add_argument("--min-airborne-alt", type=float, default=3.0,
+                        help="Minimum relative altitude (m) considered airborne for follow enable (default: 3.0)")
     parser.add_argument("--orbit-on-arrival", action="store_true", default=False,
                         help="In standoff mode, orbit once at standoff distance")
     parser.add_argument("--deterrence-marker", action="store_true", default=False,
@@ -1723,6 +1776,23 @@ def main() -> None:
                 lost_time_s=lost_s,
             )
 
+        # Telemetry HUD (always show when flight bridge exists)
+        if flight_bridge is not None:
+            _draw_telemetry_hud(overlay, flight_bridge)
+            # Big warning banner if not airborne
+            ok, reason = _check_airborne(flight_bridge, args.min_airborne_alt)
+            if not ok:
+                h, w = overlay.shape[:2]
+                warn_text = f"NOT AIRBORNE: {reason}"
+                sub_text = "Arm and Take Off in QGC first"
+                (tw, th), _ = cv2.getTextSize(warn_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                cx = w // 2
+                cy = h // 2
+                cv2.rectangle(overlay, (cx - tw // 2 - 10, cy - th - 10), (cx + tw // 2 + 10, cy + th + 10), (0, 0, 0), -1)
+                cv2.putText(overlay, warn_text, (cx - tw // 2, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
+                (tw2, th2), _ = cv2.getTextSize(sub_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+                cv2.putText(overlay, sub_text, (cx - tw2 // 2, cy + th + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+
         # Draw LOCKED label on locked target
         if args.follow_track:
             for d in detections:
@@ -1797,7 +1867,7 @@ def main() -> None:
                         operator_lock_mode = "manual_aim"
                         print(f"Manual Pilot: switched FollowMode to MANUAL_AIM")
                         if flight_bridge:
-                            flight_bridge.autonomy_enabled = True
+                            _enable_autonomy_safe(flight_bridge, args.min_airborne_alt)
                     follow_controller.set_manual_velocity(mvx, mvy, mvz)
                 else:
                     # Decay manual velocities back to zero smoothly
@@ -1824,7 +1894,7 @@ def main() -> None:
                         best = sel[0]
                         args.follow_track = best["track_id"]
                         if flight_bridge:
-                            flight_bridge.autonomy_enabled = True
+                            _enable_autonomy_safe(flight_bridge, args.min_airborne_alt)
                         if follow_controller:
                             mode = _map_follow_mode(operator_lock_mode)
                             follow_controller.set_follow_mode(mode)
@@ -1855,7 +1925,7 @@ def main() -> None:
                             follow_controller.set_follow_mode(FollowMode.YAW)
                             follow_controller.lock_target(args.follow_track)
                             if flight_bridge:
-                                flight_bridge.autonomy_enabled = True
+                                _enable_autonomy_safe(flight_bridge, args.min_airborne_alt)
                             print(f"Follow: Aim-Lock (YAW) ON for {args.follow_track}")
                     elif follow_controller.follow_mode == FollowMode.YAW:
                         follow_controller.unlock()
@@ -1880,7 +1950,7 @@ def main() -> None:
                             follow_controller.set_follow_mode(FollowMode.STANDOFF)
                             follow_controller.lock_target(args.follow_track)
                             if flight_bridge:
-                                flight_bridge.autonomy_enabled = True
+                                _enable_autonomy_safe(flight_bridge, args.min_airborne_alt)
                             print(f"Follow: Standoff-Follow ON for {args.follow_track}")
                     elif follow_controller.follow_mode == FollowMode.STANDOFF:
                         follow_controller.unlock()
@@ -1905,7 +1975,7 @@ def main() -> None:
                             follow_controller.set_follow_mode(FollowMode.MANUAL_AIM)
                             follow_controller.lock_target(args.follow_track)
                             if flight_bridge:
-                                flight_bridge.autonomy_enabled = True
+                                _enable_autonomy_safe(flight_bridge, args.min_airborne_alt)
                             print(f"Follow: Manual-Aim (Mode 3) ON for {args.follow_track}")
                     elif follow_controller.follow_mode == FollowMode.MANUAL_AIM:
                         follow_controller.unlock()
@@ -1966,6 +2036,11 @@ def main() -> None:
                 parts.append(f"ovr:{timing.get('overlay_ms', 0):.1f}")
                 parts.append(f"shw:{timing.get('imshow_ms', 0):.1f}")
                 profile_str = f"  [{', '.join(parts)}]"
+            flight_str = ""
+            if flight_bridge is not None:
+                tele = flight_bridge.telemetry_cache.snapshot()
+                alt = tele.position.alt_m if tele.position else None
+                flight_str = f"  ARM:{int(tele.armed)} ALT:{alt:.1f}m MODE:{tele.mode}"
             print(
                 f"  [{processed:4d}/{args.max_frames}] "
                 f"recv: {recv_count}  "
@@ -1973,7 +2048,7 @@ def main() -> None:
                 f"total: {total_detections}  "
                 f"inference: {inference_ms:.0f}ms  "
                 f"cap: {capture_fps:.0f}  proc: {process_fps:.1f}  "
-                f"({det_str}){track_str}{profile_str}"
+                f"({det_str}){track_str}{profile_str}{flight_str}"
             )
 
         # Debug target selection (1 Hz)
