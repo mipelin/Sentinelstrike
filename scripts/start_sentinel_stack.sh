@@ -200,14 +200,16 @@ if [ "${VALIDATE}" -eq 1 ]; then
     echo "=== Running camera validation ==="
     echo "  Testing topic: ${CAMERA_TOPIC}"
 
-    if timeout 5 gz topic -e -t "${CAMERA_TOPIC}" 2>&1 | head -1 | grep -q "header"; then
+    CAMERA_SAMPLE=$(timeout 5 gz topic -e -t "${CAMERA_TOPIC}" 2>&1 | sed -n '1,12p' || true)
+    if printf "%s\n" "${CAMERA_SAMPLE}" | grep -q "header"; then
         echo "  CAMERA OK: frames are being published!"
     else
         echo "  CAMERA WARNING: no frames on expected topic."
         ALT_TOPIC=$(gz topic -l 2>/dev/null | grep "camera/image" | head -1)
         if [ -n "${ALT_TOPIC}" ]; then
             echo "  Found alternative topic: ${ALT_TOPIC}"
-            if timeout 5 gz topic -e -t "${ALT_TOPIC}" 2>&1 | head -1 | grep -q "header"; then
+            ALT_CAMERA_SAMPLE=$(timeout 5 gz topic -e -t "${ALT_TOPIC}" 2>&1 | sed -n '1,12p' || true)
+            if printf "%s\n" "${ALT_CAMERA_SAMPLE}" | grep -q "header"; then
                 echo "  CAMERA OK on alternative topic!"
                 CAMERA_TOPIC="${ALT_TOPIC}"
             else
