@@ -1,0 +1,32 @@
+# ISR tracker tuned for aerial Gazebo UAV simulation.
+# RTX 4090 CUDA inference at ~15 FPS.
+# ~10 visible objects → ~10 stable persistent IDs.
+
+tracker_type: isr
+
+# Track lifecycle
+max_lost_frames: 150        # ~10s at 15fps — long enough for occlusion recovery
+min_hits_confirm: 3         # frames before track is confirmed
+fast_confirm_confidence: 0.7  # single high-conf hit confirms immediately
+
+# Association
+high_conf_threshold: 0.5    # detection confidence above this = high confidence
+iou_gate: 0.8               # max cost for stages 1-2
+lost_iou_gate: 0.9          # wider gate for lost track recovery (stage 3)
+iou_weight: 0.7             # IoU contribution to combined cost
+appearance_weight: 0.3      # appearance contribution to combined cost
+
+# Camera motion compensation
+cmc_enabled: true
+
+# Kalman filter tuning
+kalman_process_noise: 0.01
+kalman_measurement_noise: 0.1
+
+# Trajectory / smoothing
+trajectory_length: 100
+bbox_ema_alpha: 0.3
+conf_ema_alpha: 0.3
+
+# Processing
+fps: 15.0

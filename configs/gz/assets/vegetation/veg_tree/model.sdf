@@ -1,0 +1,26 @@
+<?xml version="1.0" ?>
+<sdf version="1.9">
+  <model name="veg_tree">
+    <static>true</static>
+    <link name="link">
+      <!-- Trunk -->
+      <visual name="trunk">
+        <geometry><cylinder><radius>0.15</radius><length>3.0</length></cylinder></geometry>
+        <pose>0 0 1.5 0 0 0</pose>
+        <material>
+          <ambient>0.35 0.25 0.15 1</ambient>
+          <diffuse>0.45 0.32 0.18 1</diffuse>
+        </material>
+      </visual>
+      <!-- Canopy -->
+      <visual name="canopy">
+        <geometry><sphere><radius>2.0</radius></sphere></geometry>
+        <pose>0 0 4.2 0 0 0</pose>
+        <material>
+          <ambient>0.15 0.40 0.12 1</ambient>
+          <diffuse>0.20 0.50 0.15 1</diffuse>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

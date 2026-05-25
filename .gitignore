@@ -13,3 +13,46 @@ runs/*
 .env
 .venv/
 venv/
+
+# Local Python/cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Runtime outputs
+runs/*
+!runs/.gitkeep
+logs/
+*.log
+*.ulg
+tmp/
+outputs/
+
+# Media / generated heavy artifacts
+*.mp4
+*.avi
+*.mkv
+*.bag
+*.db3
+*.engine
+*.onnx
+
+# Local secrets
+.env
+*.key
+*.pem
+*.ppk
+
+# Editors
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

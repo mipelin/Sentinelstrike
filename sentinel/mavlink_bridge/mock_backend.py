@@ -31,6 +31,8 @@ class MockMavlinkBackend:
         self.battery_pct: float = 100.0
         self.last_command: str | None = None
         self._uploaded_mission: MissionPlan | None = None
+        self._offboard_active: bool = False
+        self._last_velocity: tuple[float, float, float, float] | None = None
 
     def connect(self) -> CommandResult:
         self.connected = True
@@ -112,6 +114,30 @@ class MockMavlinkBackend:
         if self._uploaded_mission.waypoints:
             self.current_position = self._uploaded_mission.waypoints[-1]
         return _result(True, "Mock mission started")
+
+    def offboard_start(self) -> CommandResult:
+        if not self.connected:
+            return _result(False, "Not connected")
+        self._offboard_active = True
+        self.last_command = "OFFBOARD_START"
+        return _result(True, "Mock offboard started")
+
+    def offboard_stop(self) -> CommandResult:
+        self._offboard_active = False
+        self.last_command = "OFFBOARD_STOP"
+        return _result(True, "Mock offboard stopped")
+
+    def offboard_set_velocity_body(
+        self, vx: float, vy: float, vz: float, yawspeed: float,
+    ) -> CommandResult:
+        if not self._offboard_active:
+            return _result(False, "Offboard not active")
+        self._last_velocity = (vx, vy, vz, yawspeed)
+        self.last_command = "OFFBOARD_SET_VELOCITY"
+        return _result(True, "Mock velocity set", vx=vx, vy=vy, vz=vz, yawspeed=yawspeed)
+
+    def offboard_is_active(self) -> bool:
+        return self._offboard_active
 
     def get_telemetry(self) -> TelemetrySnapshot:
         return TelemetrySnapshot(

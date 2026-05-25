@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCENE_DENSITY: light (2 actors, 3 static people, 1 parked + 1 moving vehicle, shadows off) -->
+<sdf version='1.9'>
+  <world name="sentinel_street">
+    <physics type="ode">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
+
+    <scene>
+      <grid>false</grid>
+      <ambient>0.45 0.45 0.45 1</ambient>
+      <background>0.55 0.65 0.85 1</background>
+      <shadows>false</shadows>
+    </scene>
+
+    <!-- ======================== GROUND ======================== -->
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>1 1</size></plane></geometry>
+          <surface><friction><ode><mu>100</mu><mu2>50</mu2></ode></friction><bounce/><contact/></surface>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>500 500</size></plane></geometry>
+          <material>
+            <ambient>0.25 0.28 0.22 1</ambient>
+            <diffuse>0.3 0.33 0.27 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>1</iyy><iyz>0</iyz><izz>1</izz>
+          </inertia>
+        </inertial>
+      </link>
+      <pose>0 0 0 0 0 0</pose>
+      <self_collide>false</self_collide>
+    </model>
+
+    <!-- ======================== ROADS (minimal) ======================== -->
+
+    <model name="road_main">
+      <static>true</static>
+      <pose>0 0 0.005 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><box><size>120 10 0.01</size></box></geometry>
+          <material>
+            <ambient>0.2 0.2 0.2 1</ambient>
+            <diffuse>0.25 0.25 0.25 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="sidewalk_north">
+      <static>true</static>
+      <pose>0 7 0.05 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>120 3 0.1</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>120 3 0.1</size></box></geometry>
+          <material>
+            <ambient>0.7 0.68 0.62 1</ambient>
+            <diffuse>0.75 0.73 0.67 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="sidewalk_south">
+      <static>true</static>
+      <pose>0 -7 0.05 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>120 3 0.1</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>120 3 0.1</size></box></geometry>
+          <material>
+            <ambient>0.7 0.68 0.62 1</ambient>
+            <diffuse>0.75 0.73 0.67 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Lane markings (reduced) -->
+    <model name="lane_mark_1"><static>true</static><pose>-12 0 0.01 0 0 0</pose><link name="link"><visual name="visual"><geometry><box><size>3 0.15 0.01</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.95 0.95 0.95 1</diffuse></material></visual></link></model>
+    <model name="lane_mark_2"><static>true</static><pose>0 0 0.01 0 0 0</pose><link name="link"><visual name="visual"><geometry><box><size>3 0.15 0.01</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.95 0.95 0.95 1</diffuse></material></visual></link></model>
+    <model name="lane_mark_3"><static>true</static><pose>12 0 0.01 0 0 0</pose><link name="link"><visual name="visual"><geometry><box><size>3 0.15 0.01</size></box></geometry><material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.95 0.95 0.95 1</diffuse></material></visual></link></model>
+
+    <!-- Crosswalks -->
+    <model name="crosswalk_n"><static>true</static><pose>0 5.5 0.01 0 0 0</pose><link name="link"><visual name="visual"><geometry><box><size>6 1.5 0.01</size></box></geometry><material><ambient>0.85 0.85 0.85 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+    <model name="crosswalk_s"><static>true</static><pose>0 -5.5 0.01 0 0 0</pose><link name="link"><visual name="visual"><geometry><box><size>6 1.5 0.01</size></box></geometry><material><ambient>0.85 0.85 0.85 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material></visual></link></model>
+
+    <!-- ======================== BUILDINGS (2) ======================== -->
+
+    <model name="building_office">
+      <static>true</static>
+      <pose>25 20 0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>10 8 28</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>10 8 28</size></box></geometry>
+          <material>
+            <ambient>0.55 0.58 0.65 1</ambient>
+            <diffuse>0.65 0.68 0.75 1</diffuse>
+            <specular>0.8 0.8 0.85 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="building_shop">
+      <static>true</static>
+      <pose>-18 -16 0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>8 6 5</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>8 6 5</size></box></geometry>
+          <material>
+            <ambient>0.7 0.55 0.45 1</ambient>
+            <diffuse>0.8 0.65 0.55 1</diffuse>
+            <specular>0.3 0.3 0.3 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ======================== PARKED VEHICLES (1) ======================== -->
+
+    <include>
+      <name>hatchback_parked_1</name>
+      <pose>10 3.5 0 0 0 0</pose>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Hatchback</uri>
+    </include>
+
+    <!-- ======================== STANDING PEOPLE (3 static, Z=0) ======================== -->
+
+    <include>
+      <name>person_male_1</name>
+      <pose>-5 8.5 0 0 0 0</pose>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Male visitor</uri>
+    </include>
+
+    <include>
+      <name>person_female_1</name>
+      <pose>8 -8.5 0 0 0 3.14</pose>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/FemaleVisitor</uri>
+    </include>
+
+    <include>
+      <name>person_val_1</name>
+      <pose>4 9 0 0 0 -1.57</pose>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Male visitor</uri>
+    </include>
+
+    <!-- ======================== WALKING PEDESTRIANS (2 actors, Z=1.0) ======================== -->
+
+    <!-- Pedestrian 1: East along north sidewalk and back -->
+    <actor name="pedestrian_1">
+      <skin>
+        <filename>https://fuel.gazebosim.org/1.0/Mingfei/models/actor/tip/files/meshes/walk.dae</filename>
+        <scale>1.0</scale>
+      </skin>
+      <animation name="walk">
+        <filename>https://fuel.gazebosim.org/1.0/Mingfei/models/actor/tip/files/meshes/walk.dae</filename>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <script>
+        <loop>true</loop>
+        <delay_start>0.0</delay_start>
+        <auto_start>true</auto_start>
+        <trajectory id="0" type="walk" tension="0.5">
+          <waypoint><time>0</time><pose>-15 8.5 1.0 0 0 0</pose></waypoint>
+          <waypoint><time>12</time><pose>-5 8.3 1.0 0 0 0</pose></waypoint>
+          <waypoint><time>25</time><pose>5 8.5 1.0 0 0 0</pose></waypoint>
+          <waypoint><time>37</time><pose>15 8.4 1.0 0 0 0</pose></waypoint>
+          <waypoint><time>39</time><pose>15 8.4 1.0 0 0 3.14</pose></waypoint>
+          <waypoint><time>51</time><pose>5 8.6 1.0 0 0 3.14</pose></waypoint>
+          <waypoint><time>64</time><pose>-5 8.4 1.0 0 0 3.14</pose></waypoint>
+          <waypoint><time>77</time><pose>-15 8.5 1.0 0 0 3.14</pose></waypoint>
+          <waypoint><time>79</time><pose>-15 8.5 1.0 0 0 0</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
+    <!-- Pedestrian 2: Crosswalk north-south -->
+    <actor name="pedestrian_2">
+      <skin>
+        <filename>https://fuel.gazebosim.org/1.0/Mingfei/models/actor/tip/files/meshes/walk.dae</filename>
+        <scale>1.0</scale>
+      </skin>
+      <animation name="walk">
+        <filename>https://fuel.gazebosim.org/1.0/Mingfei/models/actor/tip/files/meshes/walk.dae</filename>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <script>
+        <loop>true</loop>
+        <delay_start>1.0</delay_start>
+        <auto_start>true</auto_start>
+        <trajectory id="0" type="walk" tension="0.5">
+          <waypoint><time>0</time><pose>2 5.5 1.0 0 0 -1.57</pose></waypoint>
+          <waypoint><time>5</time><pose>2 1.5 1.0 0 0 -1.57</pose></waypoint>
+          <waypoint><time>10</time><pose>2 -2.5 1.0 0 0 -1.57</pose></waypoint>
+          <waypoint><time>14</time><pose>2 -5.5 1.0 0 0 -1.57</pose></waypoint>
+          <waypoint><time>16</time><pose>2 -5.5 1.0 0 0 1.57</pose></waypoint>
+          <waypoint><time>21</time><pose>2 -2.5 1.0 0 0 1.57</pose></waypoint>
+          <waypoint><time>26</time><pose>2 1.5 1.0 0 0 1.57</pose></waypoint>
+          <waypoint><time>31</time><pose>2 5.5 1.0 0 0 1.57</pose></waypoint>
+          <waypoint><time>33</time><pose>2 5.5 1.0 0 0 -1.57</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
+    <!-- ======================== MOVING VEHICLES (1) ======================== -->
+
+    <include>
+      <name>vehicle_moving_1</name>
+      <pose>-50 -2.5 0 0 0 0</pose>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Pickup</uri>
+    </include>
+
+    <!-- ======================== LIGHTING ======================== -->
+
+    <light name="sun" type="directional">
+      <pose>0 0 500 0 0 0</pose>
+      <cast_shadows>false</cast_shadows>
+      <intensity>1.2</intensity>
+      <direction>0.3 0.5 -0.8</direction>
+      <diffuse>0.95 0.92 0.85 1</diffuse>
+      <specular>0.5 0.5 0.45 1</specular>
+      <attenuation>
+        <range>2000</range>
+        <linear>0</linear>
+        <constant>1</constant>
+        <quadratic>0</quadratic>
+      </attenuation>
+    </light>
+
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>47.397971057728974</latitude_deg>
+      <longitude_deg>8.546163739800146</longitude_deg>
+      <elevation>0</elevation>
+    </spherical_coordinates>
+  </world>
+</sdf>

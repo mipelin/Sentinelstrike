@@ -1,4 +1,4 @@
-.PHONY: install install-dev install-mavlink install-perception test demo mavlink-mock-demo px4-sitl-demo perception-demo tracking-demo geolocalization-demo tak-demo pipeline-demo edge-agent-demo edge-agent-px4-demo realtime-demo realtime-px4-demo realtime-webcam-demo realtime-rtsp-demo operator-demo safety-demo dashboard dashboard-local dashboard-demo demo-observation demo-abort demo-low-battery demo-link-loss demo-px4-live demo-all-safe demo-list evidence-demo quality smoke lint format typecheck all-checks pipeline-quality-demo clean-runs jetson-preflight jetson-preflight-dev jetson-run jetson-install-service jetson-status jetson-export-onnx jetson-export-engine stability-10min stability-60min
+.PHONY: install install-dev install-mavlink install-perception test demo mavlink-mock-demo px4-sitl-demo perception-demo tracking-demo geolocalization-demo tak-demo pipeline-demo edge-agent-demo edge-agent-px4-demo realtime-demo realtime-px4-demo realtime-webcam-demo realtime-rtsp-demo operator-demo safety-demo dashboard dashboard-local dashboard-demo demo-observation demo-abort demo-low-battery demo-link-loss demo-px4-live demo-all-safe demo-list evidence-demo quality smoke lint format typecheck all-checks pipeline-quality-demo clean-runs jetson-preflight jetson-preflight-dev jetson-run jetson-install-service jetson-status jetson-export-onnx jetson-export-engine stability-10min stability-60min gz-headless gz-server-only gz-server-only-light gz-server-only-medium gz-server-only-heavy realterrain-realistic-light realterrain-realistic-medium realterrain-realistic-heavy realterrain-audit realterrain-isr-rural-light realterrain-isr-rural-medium realterrain-isr-rural-heavy realterrain-isr-rural-camera-lite realterrain-isr-rural-audit
 
 install:
 	pip install -e ".[dev]"
@@ -177,3 +177,69 @@ stability-10min:
 
 stability-60min:
 	python3 -m apps.tools.run_stability_test --duration-min 60 --backend mock --target-fps 10 --no-save-frames
+
+# --- Gazebo simulation targets ---
+#
+# RENDER_ENGINE=ogre|ogre2  Select rendering engine (default: ogre)
+# WORLD=...                 World name (default depends on target)
+# DENSITY=light|medium|heavy  Object density (default: medium)
+
+RENDER_ENGINE ?= ogre
+
+gz-headless:
+	RENDER_ENGINE=$(RENDER_ENGINE) bash scripts/px4-headless.sh $(or $(WORLD),sentinel_street) $(or $(DENSITY),medium)
+
+gz-server-only:
+	RENDER_ENGINE=$(RENDER_ENGINE) WORLD=$(or $(WORLD),1779343687303) DENSITY=$(or $(DENSITY),medium) bash scripts/px4-server-only.sh
+
+gz-server-only-light:
+	RENDER_ENGINE=$(RENDER_ENGINE) WORLD=$(or $(WORLD),1779343687303) DENSITY=light bash scripts/px4-server-only.sh
+
+gz-server-only-medium:
+	RENDER_ENGINE=$(RENDER_ENGINE) WORLD=$(or $(WORLD),1779343687303) DENSITY=medium bash scripts/px4-server-only.sh
+
+gz-server-only-heavy:
+	RENDER_ENGINE=$(RENDER_ENGINE) WORLD=$(or $(WORLD),1779343687303) DENSITY=heavy bash scripts/px4-server-only.sh
+
+# --- Realistic terrain targets (Fuel mesh models) ---
+#
+# RENDER_ENGINE=ogre|ogre2  Select rendering engine (default: ogre)
+# WORLD=...                 World name (default: 1779343687303)
+
+realterrain-realistic-light:
+	python3 -m apps.tools.import_fuel_assets --verify-only
+	python3 -m apps.tools.place_realistic_targets --world $(or $(WORLD),1779343687303) --density light
+
+realterrain-realistic-medium:
+	python3 -m apps.tools.import_fuel_assets --verify-only
+	python3 -m apps.tools.place_realistic_targets --world $(or $(WORLD),1779343687303) --density medium
+
+realterrain-realistic-heavy:
+	python3 -m apps.tools.import_fuel_assets --verify-only
+	python3 -m apps.tools.place_realistic_targets --world $(or $(WORLD),1779343687303) --density heavy
+
+realterrain-audit:
+	python3 -m apps.tools.audit_realistic_scene --world $(or $(WORLD),1779343687303) --density $(or $(DENSITY),light)
+
+realterrain-isr-rural-light:
+	python3 -m apps.tools.import_fuel_isr_assets --verify-only
+	python3 -m apps.tools.place_rural_isr_scene --world $(or $(WORLD),1779343687303) --density light
+
+realterrain-isr-rural-medium:
+	python3 -m apps.tools.import_fuel_isr_assets --verify-only
+	python3 -m apps.tools.place_rural_isr_scene --world $(or $(WORLD),1779343687303) --density medium
+
+realterrain-isr-rural-heavy:
+	python3 -m apps.tools.import_fuel_isr_assets --verify-only
+	python3 -m apps.tools.place_rural_isr_scene --world $(or $(WORLD),1779343687303) --density heavy
+
+realterrain-isr-rural-camera-lite:
+	python3 -m apps.tools.import_fuel_isr_assets --verify-only
+	python3 -m apps.tools.place_rural_isr_scene --world $(or $(WORLD),1779343687303) --density camera_lite
+
+realterrain-isr-rural-realistic-lite:
+	python3 -m apps.tools.import_fuel_isr_assets --verify-only
+	python3 -m apps.tools.place_rural_isr_scene --world $(or $(WORLD),1779343687303) --density realistic_lite
+
+realterrain-isr-rural-audit:
+	python3 -m apps.tools.audit_rural_isr_scene --world $(or $(WORLD),1779343687303) --density $(or $(DENSITY),medium)

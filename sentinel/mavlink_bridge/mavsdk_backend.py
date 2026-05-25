@@ -89,6 +89,7 @@ class MavsdkBackend:
         self._default_speed = default_speed_mps
         self._drone: Any = None
         self._connected = False
+        self._offboard_active: bool = False
         self._loop = AsyncLoopThread()
 
     # ------------------------------------------------------------------
@@ -359,6 +360,60 @@ class MavsdkBackend:
 
     def start_mission(self) -> CommandResult:
         return self._safe_call("START_MISSION", self._start_mission_async())
+
+    # ------------------------------------------------------------------
+    # offboard control
+    # ------------------------------------------------------------------
+
+    async def _offboard_start_async(self) -> CommandResult:
+        if self._drone is None:
+            return _result(False, "Not connected")
+        from mavsdk.offboard import VelocityBodyYawspeed
+
+        await self._drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
+        await self._drone.offboard.start()
+        self._offboard_active = True
+        return _result(True, "Offboard started")
+
+    def offboard_start(self) -> CommandResult:
+        return self._safe_call("OFFBOARD_START", self._offboard_start_async())
+
+    async def _offboard_stop_async(self) -> CommandResult:
+        if self._drone is None:
+            return _result(False, "Not connected")
+        from mavsdk.offboard import VelocityBodyYawspeed
+
+        await self._drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
+        await self._drone.offboard.stop()
+        self._offboard_active = False
+        return _result(True, "Offboard stopped")
+
+    def offboard_stop(self) -> CommandResult:
+        return self._safe_call("OFFBOARD_STOP", self._offboard_stop_async())
+
+    async def _offboard_set_velocity_body_async(
+        self, vx: float, vy: float, vz: float, yawspeed: float,
+    ) -> CommandResult:
+        if self._drone is None:
+            return _result(False, "Not connected")
+        from mavsdk.offboard import VelocityBodyYawspeed
+
+        await self._drone.offboard.set_velocity_body(
+            VelocityBodyYawspeed(vx, vy, vz, yawspeed),
+        )
+        return _result(True, "Velocity set", vx=vx, vy=vy, vz=vz, yawspeed=yawspeed)
+
+    def offboard_set_velocity_body(
+        self, vx: float, vy: float, vz: float, yawspeed: float,
+    ) -> CommandResult:
+        return self._safe_call(
+            "OFFBOARD_SET_VELOCITY",
+            self._offboard_set_velocity_body_async(vx, vy, vz, yawspeed),
+            timeout_s=2.0,
+        )
+
+    def offboard_is_active(self) -> bool:
+        return getattr(self, "_offboard_active", False)
 
     # ------------------------------------------------------------------
     # cleanup
