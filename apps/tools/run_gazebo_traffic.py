@@ -25,6 +25,7 @@ import sys
 import time
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 
 try:
     import gz.transport13 as _gzt
@@ -35,6 +36,11 @@ try:
 except ImportError:
     _GZ_AVAILABLE = False
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.append(str(PROJECT_ROOT))
+
+from apps.tools.place_real_terrain_vegetation import load_terrain, terrain_z
+
 
 @dataclass
 class Waypoint:
@@ -43,6 +49,7 @@ class Waypoint:
     z: float
     yaw: float
     speed: float  # m/s to next waypoint
+    dwell_s: float = 0.0
 
 
 @dataclass
@@ -149,39 +156,77 @@ def _default_routes(density: str = "medium") -> list[Route]:
     return _all_routes()[:count]
 
 
+def _dynamic_v3_routes() -> list[Route]:
+    terrain = load_terrain("1779343687303")
+
+    def z_at(x: float, y: float) -> float:
+        return terrain_z(terrain, x, y)
+
+    return [
+        Route(
+            model_name="vehicle_dynamic_pickup_001",
+            yaw_offset=0.0,
+            waypoints=[
+                Waypoint(x=220.0, y=-350.0, z=z_at(220.0, -350.0), yaw=0.0, speed=3.2, dwell_s=1.5),
+                Waypoint(x=228.0, y=-393.0, z=z_at(228.0, -393.0), yaw=0.0, speed=2.6),
+                Waypoint(x=215.0, y=-391.0, z=z_at(215.0, -391.0), yaw=0.0, speed=2.2),
+                Waypoint(x=208.0, y=-388.0, z=z_at(208.0, -388.0), yaw=0.0, speed=2.8),
+                Waypoint(x=220.0, y=-350.0, z=z_at(220.0, -350.0), yaw=0.0, speed=2.8),
+            ],
+        ),
+        Route(
+            model_name="vehicle_dynamic_truckbox_001",
+            yaw_offset=0.0,
+            waypoints=[
+                Waypoint(x=198.0, y=-379.0, z=z_at(198.0, -379.0), yaw=0.0, speed=1.8, dwell_s=3.0),
+                Waypoint(x=205.0, y=-383.0, z=z_at(205.0, -383.0), yaw=0.0, speed=2.1, dwell_s=1.5),
+                Waypoint(x=214.0, y=-389.0, z=z_at(214.0, -389.0), yaw=0.0, speed=1.9, dwell_s=2.0),
+                Waypoint(x=223.0, y=-394.0, z=z_at(223.0, -394.0), yaw=0.0, speed=2.2, dwell_s=4.0),
+                Waypoint(x=198.0, y=-379.0, z=z_at(198.0, -379.0), yaw=0.0, speed=2.2),
+            ],
+        ),
+    ]
+
+
 def _interpolate_route(route: Route, elapsed: float) -> tuple[float, float, float, float] | None:
     """Compute interpolated (x, y, z, yaw) along a route at given elapsed time."""
     wps = route.waypoints
     if len(wps) < 2:
         return None
 
-    # Compute cumulative segment times
-    seg_times: list[float] = [0.0]
+    segments: list[tuple[str, Waypoint, Waypoint | None, float]] = []
+    total_time = 0.0
     for i in range(len(wps) - 1):
         a, b = wps[i], wps[i + 1]
+        if a.dwell_s > 0.0:
+            segments.append(("dwell", a, None, a.dwell_s))
+            total_time += a.dwell_s
         dist = math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2)
         speed = a.speed if a.speed > 0 else 10.0
-        seg_times.append(seg_times[-1] + dist / speed)
+        duration = dist / speed if dist > 0.0 else 0.0
+        if duration > 0.0:
+            segments.append(("move", a, b, duration))
+            total_time += duration
 
-    total_time = seg_times[-1]
     if total_time <= 0:
         return wps[0].x, wps[0].y, wps[0].z, wps[0].yaw
 
     t = elapsed % total_time if route.loop else min(elapsed, total_time)
 
-    for i in range(len(seg_times) - 1):
-        if seg_times[i] <= t <= seg_times[i + 1]:
-            seg_duration = seg_times[i + 1] - seg_times[i]
-            frac = (t - seg_times[i]) / seg_duration if seg_duration > 0 else 0.0
-            a, b = wps[i], wps[i + 1]
+    cursor = 0.0
+    for seg_type, a, b, duration in segments:
+        if cursor <= t <= cursor + duration:
+            if seg_type == "dwell" or b is None:
+                return a.x, a.y, a.z, a.yaw
+            frac = (t - cursor) / duration if duration > 0 else 0.0
             x = a.x + (b.x - a.x) * frac
             y = a.y + (b.y - a.y) * frac
             z = a.z + (b.z - a.z) * frac
-            # Compute yaw from velocity direction, not waypoint yaw values
             dx = b.x - a.x
             dy = b.y - a.y
             yaw = math.atan2(dy, dx) if abs(dx) > 0.01 or abs(dy) > 0.01 else a.yaw
             return x, y, z, yaw
+        cursor += duration
 
     return wps[-1].x, wps[-1].y, wps[-1].z, wps[-1].yaw
 
@@ -267,6 +312,10 @@ def main() -> None:
     parser.add_argument("--hz", type=float, default=20.0, help="Pose update rate (default: 20)")
     parser.add_argument("--dry-run", action="store_true", help="Print poses without sending")
     parser.add_argument(
+        "--scenario", choices=["default", "dynamic_v3"], default="default",
+        help="Route bundle to use (default: sentinel_street routes)",
+    )
+    parser.add_argument(
         "--density", default="medium", choices=["light", "medium", "heavy"],
         help="Scene density: light=1 vehicle, medium=2, heavy=4 (default: medium)",
     )
@@ -276,7 +325,7 @@ def main() -> None:
         print("ERROR: gz.transport13 / gz.msgs10 not available", file=sys.stderr)
         sys.exit(1)
 
-    routes = _default_routes(args.density)
+    routes = _dynamic_v3_routes() if args.scenario == "dynamic_v3" else _default_routes(args.density)
     run_traffic(args.world, routes, args.hz, args.dry_run)
 
 

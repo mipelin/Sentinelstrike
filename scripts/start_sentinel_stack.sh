@@ -25,6 +25,7 @@ ISR_WORLD="1779343687303_isr_rural_light"
 ISR_LITE_WORLD="1779343687303_isr_rural_camera_lite"
 ISR_REALISTIC_LITE_WORLD="1779343687303_isr_rural_realistic_lite"
 ISR_REALISTIC_LITE_V2_WORLD="1779343687303_isr_rural_realistic_lite_v2"
+ISR_DYNAMIC_V3_WORLD="1779343687303_isr_rural_dynamic_v3"
 MODEL="${PX4_SIM_MODEL:-x500_mono_cam}"
 
 # Default to the world that has working camera rendering
@@ -42,6 +43,8 @@ for arg in "$@"; do
                                SPAWN_POSE="${PX4_GZ_MODEL_POSE:-220,-350,20,0,0,0}" ;;
         --isr-realistic-lite-v2) WORLD="${ISR_REALISTIC_LITE_V2_WORLD}"
                                  SPAWN_POSE="${PX4_GZ_MODEL_POSE:-220,-350,20,0,0,0}" ;;
+        --isr-dynamic-v3)      WORLD="${ISR_DYNAMIC_V3_WORLD}"
+                               SPAWN_POSE="${PX4_GZ_MODEL_POSE:-220,-350,20,0,0,0}" ;;
         --no-qgc)              NO_QGC=1 ;;
         --validate)            VALIDATE=1 ;;
     esac
@@ -72,6 +75,10 @@ elif [ "${WORLD}" = "${ISR_REALISTIC_LITE_WORLD}" ]; then
     echo ""
 elif [ "${WORLD}" = "${ISR_REALISTIC_LITE_V2_WORLD}" ]; then
     echo "  INFO: Using ISR Realistic Lite V2 world with improved human visibility and grounded calibration groups."
+    echo "  Drone will spawn at target pose: ${SPAWN_POSE}"
+    echo ""
+elif [ "${WORLD}" = "${ISR_DYNAMIC_V3_WORLD}" ]; then
+    echo "  INFO: Using ISR Rural Dynamic V3 world with moving humans, vehicles, and occlusion tree-lines."
     echo "  Drone will spawn at target pose: ${SPAWN_POSE}"
     echo ""
 fi
@@ -158,6 +165,15 @@ fi
 
 echo "PX4 is running."
 
+if [ "${WORLD}" = "${ISR_DYNAMIC_V3_WORLD}" ]; then
+    echo "Launching dynamic-v3 vehicle traffic controller..."
+    tmux new-window -t sentinel_sim -n "Traffic" || true
+    tmux send-keys -t sentinel_sim:Traffic "cd ${SENTINEL_DIR}" C-m
+    tmux send-keys -t sentinel_sim:Traffic "source .venv/bin/activate" C-m
+    tmux send-keys -t sentinel_sim:Traffic "python3 -m apps.tools.run_gazebo_traffic --world ${WORLD} --scenario dynamic_v3 --hz 15" C-m
+    sleep 2
+fi
+
 # ── Launch QGroundControl ────────────────────────────────────────────
 if [ "${NO_QGC}" -eq 0 ]; then
     echo ""
@@ -181,14 +197,14 @@ echo ""
 
 # Check UDP ports
 echo "  MAVLink ports:"
-ss -lunp 2>/dev/null | grep -E "14550|18570|14540|14580" | while read line; do
+(ss -lunp 2>/dev/null | grep -E "14550|18570|14540|14580" || true) | while read line; do
     echo "    ${line}"
 done
 
 # Check camera topics
 echo ""
 echo "  Camera topics:"
-gz topic -l 2>/dev/null | grep -E "camera/image" | while read line; do
+(gz topic -l 2>/dev/null | grep -E "camera/image" || true) | while read line; do
     echo "    ${line}"
 done
 

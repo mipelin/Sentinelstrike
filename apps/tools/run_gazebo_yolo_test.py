@@ -57,9 +57,6 @@ except ImportError:
     _CV2_AVAILABLE = False
 
 from apps.tools.view_gazebo_camera import FrameState
-from sentinel.runtime.contracts import VelocityCommand
-
-
 def _selectable_targets(detections: list[dict], frame_w: int) -> list[dict]:
     """Return sorted list of selectable tracks for F/Tab target selection.
 
@@ -891,7 +888,7 @@ def _draw_isr_overlay(
                     (6, y), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (150, 150, 150), 1, cv2.LINE_AA)
         y += 18
         # Controls reminder
-        cv2.putText(out, "[f]lock [TAB]cycle [s]stop [q]quit", (w - 330, y),
+        cv2.putText(out, "[f]lock [a]aim [o]standoff [m]manual [TAB]cycle [s]stop [q]quit", (w - 610, y),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.3, (150, 150, 150), 1, cv2.LINE_AA)
 
     return out
@@ -998,8 +995,8 @@ def main() -> None:
                         help="Process every Nth captured frame (default: 1)")
     parser.add_argument("--track", choices=["bytetrack", "botsort", "iou", "persistent", "isr"], help="Enable tracking")
     parser.add_argument("--follow-track", metavar="ID", help="Lock camera on track ID (e.g., TGT-001) and show follow overlay")
-    parser.add_argument("--follow-mode", choices=["overlay", "yaw", "yaw_xy", "intercept", "standoff"], default="overlay",
-                        help="Follow mode: overlay=visual only, yaw=offboard yaw, yaw_xy=yaw+translation, intercept=safe approach+orbit, standoff=safe observation at distance (default: overlay)")
+    parser.add_argument("--follow-mode", choices=["overlay", "yaw", "yaw_xy", "intercept", "standoff", "manual_aim"], default="overlay",
+                        help="Follow mode: overlay=visual only, yaw=aim lock, yaw_xy=aim+translation, intercept=safe approach+orbit, standoff=safe observation at distance, manual_aim=operator position + automatic aim (default: overlay)")
     parser.add_argument("--standoff-distance", type=float, default=10.0,
                         help="Standoff distance in meters (default: 10)")
     parser.add_argument("--standoff-altitude", type=float, default=10.0,
@@ -1163,12 +1160,18 @@ def main() -> None:
             "intercept": FollowMode.INTERCEPT,
             "standoff": FollowMode.STANDOFF,
             "yaw_xy": FollowMode.YAW_XY,
+            "manual_aim": FollowMode.MANUAL_AIM,
         }.get(follow_mode, FollowMode.YAW)
+
+    operator_lock_mode = "yaw" if args.follow_mode == "overlay" else args.follow_mode
+
+    def _current_mode_label() -> str:
+        return operator_lock_mode
 
     # ── Worker follow path: deferred until after FlightBridgeWorker creation ──
 
     # ── Legacy dry-run follow path ─────────────────────────────────────
-    if not args.use_workers and args.follow_dry_run and args.follow_mode in ("yaw", "yaw_xy", "intercept", "standoff"):
+    if not args.use_workers and args.follow_dry_run and args.follow_mode in ("yaw", "yaw_xy", "intercept", "standoff", "manual_aim"):
         from sentinel.mavlink_bridge.mock_backend import MockMavlinkBackend
         from sentinel.autonomy.follow_controller import FollowController
 
@@ -1197,7 +1200,7 @@ def main() -> None:
         print(f"  MAVSDK owner:    {type(follow_backend).__name__}")
 
     # ── Legacy MAVSDK follow path ──────────────────────────────────────
-    elif not args.use_workers and args.follow_mode in ("yaw", "yaw_xy", "intercept", "standoff") and args.track == "isr":
+    elif not args.use_workers and args.follow_mode in ("yaw", "yaw_xy", "intercept", "standoff", "manual_aim") and args.track == "isr":
         _REQUIRED_OFFBOARD = ("offboard_start", "offboard_stop",
                               "offboard_set_velocity_body", "offboard_is_active")
         try:
@@ -1299,7 +1302,7 @@ def main() -> None:
         print(f"Workers started: camera + perception ({args.target_fps} Hz)")
 
         # FlightBridgeWorker — isolates MAVSDK from vision loop
-        if args.follow_mode in ("yaw", "yaw_xy", "intercept", "standoff"):
+        if args.follow_mode in ("yaw", "yaw_xy", "intercept", "standoff", "manual_aim"):
             from sentinel.runtime.workers.flight_bridge_worker import FlightBridgeWorker
 
             if args.follow_dry_run:
@@ -1321,7 +1324,7 @@ def main() -> None:
                 print(f"FlightBridge started (offboard {flight_bridge._hz:.0f} Hz)")
 
         # ── Worker follow controller (after FlightBridgeWorker) ────────
-        if flight_bridge is not None and args.follow_mode in ("yaw", "yaw_xy", "intercept", "standoff"):
+        if flight_bridge is not None and args.follow_mode in ("yaw", "yaw_xy", "intercept", "standoff", "manual_aim"):
             from sentinel.autonomy.follow_controller import FollowController
 
             mode = _map_follow_mode(args.follow_mode)
@@ -1372,7 +1375,7 @@ def main() -> None:
     # Setup display window
     show_display = not args.no_display
     if show_display:
-        window_name = "YOLO Gazebo ISR Test  [f]follow [TAB]cycle [s]stop [q]quit"
+        window_name = "YOLO Gazebo ISR Test  [f]lock [a]aim [o]standoff [m]manual [TAB]cycle [s]stop [q]quit"
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(window_name, 960, 720)
 
@@ -1741,12 +1744,72 @@ def main() -> None:
         if annotated_dir is not None and detections:
             cv2.imwrite(str(annotated_dir / f"frame_{processed:06d}.jpg"), overlay)
 
+        # QGC / Manual flight mode override check (1 Hz)
+        if processed % int(args.target_fps or 25) == 0 and flight_bridge is not None and flight_bridge.autonomy_enabled:
+            tele_snap = flight_bridge.telemetry_cache.snapshot()
+            if tele_snap.mode is not None:
+                # If PX4 is not in OFFBOARD (e.g. manually switched to POSITION or stabilized/takeoff mode)
+                if tele_snap.mode.upper() not in ("OFFBOARD", "UNKNOWN", "DISARMED"):
+                    print(f"\n[SAFETY] External manual stick / QGC pilot override detected (PX4 Mode: {tele_snap.mode})! Disengaging autonomy.")
+                    flight_bridge.autonomy_enabled = False
+                    if follow_controller:
+                        follow_controller.unlock()
+                    args.follow_track = None
+
         # Show display
         if show_display:
             t_imshow_start = time.monotonic()
             cv2.imshow(window_name, overlay)
             timing["imshow_ms"] = (time.monotonic() - t_imshow_start) * 1000
             key = cv2.pollKey()
+            
+            # Manual Piloting Keyboard Handler
+            manual_pressed = False
+            if follow_controller is not None:
+                from sentinel.autonomy.follow_controller import FollowMode
+                mvx, mvy, mvz = follow_controller._manual_vx, follow_controller._manual_vy, follow_controller._manual_vz
+                
+                # Detect Arrow keys (common OpenCV codes: Up=82/65362/38/2490368, Down=84/65364/40/2621440, etc.)
+                if key in (82, 65362, 38, 2490368):
+                    mvx = min(mvx + 0.15, 0.8)
+                    manual_pressed = True
+                elif key in (84, 65364, 40, 2621440):
+                    mvx = max(mvx - 0.15, -0.8)
+                    manual_pressed = True
+                    
+                if key in (81, 65361, 37, 2424832):
+                    mvy = max(mvy - 0.15, -0.8)
+                    manual_pressed = True
+                elif key in (83, 65363, 39, 2555904):
+                    mvy = min(mvy + 0.15, 0.8)
+                    manual_pressed = True
+                    
+                if key == 91 or key == ord("["):  # Climb
+                    mvz = min(mvz + 0.1, 0.5)
+                    manual_pressed = True
+                elif key == 93 or key == ord("]"):  # Descend
+                    mvz = max(mvz - 0.1, -0.5)
+                    manual_pressed = True
+                    
+                if manual_pressed:
+                    if follow_controller.follow_mode != FollowMode.MANUAL_AIM:
+                        follow_controller.set_follow_mode(FollowMode.MANUAL_AIM)
+                        operator_lock_mode = "manual_aim"
+                        print(f"Manual Pilot: switched FollowMode to MANUAL_AIM")
+                        if flight_bridge:
+                            flight_bridge.autonomy_enabled = True
+                    follow_controller.set_manual_velocity(mvx, mvy, mvz)
+                else:
+                    # Decay manual velocities back to zero smoothly
+                    decay = 0.82
+                    mvx *= decay
+                    mvy *= decay
+                    mvz *= decay
+                    if abs(mvx) < 0.05: mvx = 0.0
+                    if abs(mvy) < 0.05: mvy = 0.0
+                    if abs(mvz) < 0.05: mvz = 0.0
+                    follow_controller.set_manual_velocity(mvx, mvy, mvz)
+
             if key == ord("q"):
                 break
             elif key == ord("f"):
@@ -1763,9 +1826,11 @@ def main() -> None:
                         if flight_bridge:
                             flight_bridge.autonomy_enabled = True
                         if follow_controller:
+                            mode = _map_follow_mode(operator_lock_mode)
+                            follow_controller.set_follow_mode(mode)
                             follow_controller.lock_target(args.follow_track)
                         last_key_f_time = now_key
-                        print(f"Follow: locked on {args.follow_track} ({best['class']} conf={best['confidence']:.2f})")
+                        print(f"Follow: locked on {args.follow_track} ({best['class']} conf={best['confidence']:.2f}) mode={follow_controller.follow_mode.value if follow_controller else _current_mode_label()}")
                     else:
                         last_key_f_time = now_key
                         print("Follow: no selectable targets")
@@ -1774,12 +1839,84 @@ def main() -> None:
                         follow_controller.unlock()
                     if flight_bridge:
                         flight_bridge.autonomy_enabled = False
-                        flight_bridge.command_slot.write(
-                            VelocityCommand(vx=0.0, vy=0.0, vz=0.0, yawspeed=0.0),
-                        )
                     args.follow_track = None
                     last_key_f_time = now_key
                     print("Follow: unlocked")
+            elif key == ord("a"):
+                # MODE 1 — Aim Lock / Camera Lock (Yaw only)
+                if follow_controller:
+                    from sentinel.autonomy.follow_controller import FollowMode
+                    if args.follow_track is None:
+                        fh, fw = frame.shape[:2]
+                        sel = _selectable_targets(detections, fw)
+                        if sel:
+                            args.follow_track = sel[0]["track_id"]
+                            operator_lock_mode = "yaw"
+                            follow_controller.set_follow_mode(FollowMode.YAW)
+                            follow_controller.lock_target(args.follow_track)
+                            if flight_bridge:
+                                flight_bridge.autonomy_enabled = True
+                            print(f"Follow: Aim-Lock (YAW) ON for {args.follow_track}")
+                    elif follow_controller.follow_mode == FollowMode.YAW:
+                        follow_controller.unlock()
+                        if flight_bridge:
+                            flight_bridge.autonomy_enabled = False
+                        args.follow_track = None
+                        print("Follow: Aim-Lock OFF")
+                    else:
+                        operator_lock_mode = "yaw"
+                        follow_controller.set_follow_mode(FollowMode.YAW)
+                        print(f"Follow: switched to Aim-Lock (YAW) for {args.follow_track}")
+            elif key == ord("o"):
+                # MODE 2 — Standoff Follow
+                if follow_controller:
+                    from sentinel.autonomy.follow_controller import FollowMode
+                    if args.follow_track is None:
+                        fh, fw = frame.shape[:2]
+                        sel = _selectable_targets(detections, fw)
+                        if sel:
+                            args.follow_track = sel[0]["track_id"]
+                            operator_lock_mode = "standoff"
+                            follow_controller.set_follow_mode(FollowMode.STANDOFF)
+                            follow_controller.lock_target(args.follow_track)
+                            if flight_bridge:
+                                flight_bridge.autonomy_enabled = True
+                            print(f"Follow: Standoff-Follow ON for {args.follow_track}")
+                    elif follow_controller.follow_mode == FollowMode.STANDOFF:
+                        follow_controller.unlock()
+                        if flight_bridge:
+                            flight_bridge.autonomy_enabled = False
+                        args.follow_track = None
+                        print("Follow: Standoff-Follow OFF")
+                    else:
+                        operator_lock_mode = "standoff"
+                        follow_controller.set_follow_mode(FollowMode.STANDOFF)
+                        print(f"Follow: switched to Standoff-Follow for {args.follow_track}")
+            elif key == ord("m"):
+                # MODE 3 — Manual Position + Aim Lock
+                if follow_controller:
+                    from sentinel.autonomy.follow_controller import FollowMode
+                    if args.follow_track is None:
+                        fh, fw = frame.shape[:2]
+                        sel = _selectable_targets(detections, fw)
+                        if sel:
+                            args.follow_track = sel[0]["track_id"]
+                            operator_lock_mode = "manual_aim"
+                            follow_controller.set_follow_mode(FollowMode.MANUAL_AIM)
+                            follow_controller.lock_target(args.follow_track)
+                            if flight_bridge:
+                                flight_bridge.autonomy_enabled = True
+                            print(f"Follow: Manual-Aim (Mode 3) ON for {args.follow_track}")
+                    elif follow_controller.follow_mode == FollowMode.MANUAL_AIM:
+                        follow_controller.unlock()
+                        if flight_bridge:
+                            flight_bridge.autonomy_enabled = False
+                        args.follow_track = None
+                        print("Follow: Manual-Aim OFF")
+                    else:
+                        operator_lock_mode = "manual_aim"
+                        follow_controller.set_follow_mode(FollowMode.MANUAL_AIM)
+                        print(f"Follow: switched to Manual-Aim (Mode 3) for {args.follow_track}")
             elif key == ord("\t"):
                 now_key = time.monotonic()
                 if now_key - last_key_tab_time < 0.3:
@@ -1799,6 +1936,7 @@ def main() -> None:
                         args.follow_track = tids[idx]
                         if follow_controller:
                             follow_controller.unlock()
+                            follow_controller.set_follow_mode(_map_follow_mode(operator_lock_mode))
                             follow_controller.lock_target(args.follow_track)
                         print(f"Follow: {old_id} → {args.follow_track}")
                     else:

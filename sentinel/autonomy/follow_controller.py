@@ -47,6 +47,7 @@ class FollowMode(str, Enum):
     YAW_XY = "yaw_xy"
     INTERCEPT = "intercept"
     STANDOFF = "standoff"
+    MANUAL_AIM = "manual_aim"
 
 
 class TargetState(str, Enum):
@@ -267,6 +268,41 @@ class FollowController:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._offboard_engaged: bool = False
+        self._manual_vx: float = 0.0
+        self._manual_vy: float = 0.0
+        self._manual_vz: float = 0.0
+
+    @property
+    def follow_mode(self) -> FollowMode:
+        with self._lock:
+            return self._follow_mode
+
+    def set_follow_mode(self, follow_mode: FollowMode) -> None:
+        with self._lock:
+            self._follow_mode = follow_mode
+        logger.info("Follow: mode set to {}", follow_mode.value)
+
+    def _write_velocity_command(self, vx: float, vy: float, vz: float, yaw_rate: float, source: str) -> None:
+        if self._command_slot is None:
+            return
+        from sentinel.runtime.contracts import VelocityCommand
+
+        self._command_slot.write(VelocityCommand(
+            vx=vx,
+            vy=vy,
+            vz=vz,
+            yawspeed=yaw_rate,
+            source=source,
+        ))
+
+    def _emit_zero_command(self, source: str) -> None:
+        self._write_velocity_command(0.0, 0.0, 0.0, 0.0, source)
+
+    def set_manual_velocity(self, vx: float, vy: float, vz: float) -> None:
+        with self._lock:
+            self._manual_vx = vx
+            self._manual_vy = vy
+            self._manual_vz = vz
 
     @property
     def state(self) -> TargetState:
@@ -335,7 +371,11 @@ class FollowController:
             self._world_speed_mps = 0.0
             self._world_heading_rad = 0.0
             self._emergence_points = []
+            self._manual_vx = 0.0
+            self._manual_vy = 0.0
+            self._manual_vz = 0.0
         self._stop_loop()
+        self._emit_zero_command("follow_unlock")
         logger.info("Follow: unlocked")
 
     def update_target(self, tracks: list[dict], frame_w: int, frame_h: int) -> None:
@@ -469,6 +509,10 @@ class FollowController:
 
                 if self._follow_mode in (FollowMode.YAW_XY, FollowMode.INTERCEPT, FollowMode.STANDOFF):
                     self._compute_xy_velocity(error_x, bbox_h, frame_h)
+                elif self._follow_mode == FollowMode.MANUAL_AIM:
+                    self._current_vx = self._manual_vx
+                    self._current_vy = self._manual_vy
+                    self._current_vz = self._manual_vz
                 else:
                     self._current_vx = 0.0
                     self._current_vy = 0.0
@@ -476,9 +520,14 @@ class FollowController:
 
             else:
                 # Target lost — hysteresis before full search
-                self._current_vx = 0.0
-                self._current_vy = 0.0
-                self._current_vz = 0.0
+                if self._follow_mode == FollowMode.MANUAL_AIM:
+                    self._current_vx = self._manual_vx
+                    self._current_vy = self._manual_vy
+                    self._current_vz = self._manual_vz
+                else:
+                    self._current_vx = 0.0
+                    self._current_vy = 0.0
+                    self._current_vz = 0.0
 
                 if self._follow_mode == FollowMode.STANDOFF:
                     self._standoff_phase = "HOLD"
@@ -785,9 +834,9 @@ class FollowController:
             with self._lock:
                 state = self._state
                 yaw_rate = self._current_yaw_rate
-                vx = self._current_vx
-                vy = self._current_vy
-                vz = self._current_vz
+                vx = self._manual_vx if self._follow_mode == FollowMode.MANUAL_AIM else self._current_vx
+                vy = self._manual_vy if self._follow_mode == FollowMode.MANUAL_AIM else self._current_vy
+                vz = self._manual_vz if self._follow_mode == FollowMode.MANUAL_AIM else self._current_vz
                 search_dir = self._search_direction
                 tracker_age = time.monotonic() - self._tracker_time if self._tracker_time > 0 else 999.0
                 lost_time = self._lost_time
@@ -800,9 +849,10 @@ class FollowController:
 
             if tracker_age > 0.3:
                 yaw_rate *= self._decay_rate
-                vx *= self._decay_rate
-                vy *= self._decay_rate
-                vz *= self._decay_rate
+                if self._follow_mode != FollowMode.MANUAL_AIM:
+                    vx *= self._decay_rate
+                    vy *= self._decay_rate
+                    vz *= self._decay_rate
 
             if state == TargetState.UNLOCKED:
                 break
@@ -811,9 +861,14 @@ class FollowController:
                 # Brief target miss — hold last command with gentle decay
                 decay = 0.95
                 yaw_rate *= decay
-                vx *= decay
-                vy *= decay
-                vz *= decay
+                if self._follow_mode == FollowMode.MANUAL_AIM:
+                    vx = self._manual_vx
+                    vy = self._manual_vy
+                    vz = self._manual_vz
+                else:
+                    vx *= decay
+                    vy *= decay
+                    vz *= decay
 
             elif state == TargetState.SEARCHING:
                 now = time.monotonic()
@@ -909,9 +964,14 @@ class FollowController:
                     vy = 0.0
                     vz = 0.0
 
-                vx = 0.0
-                vy = 0.0
-                vz = 0.0
+                if self._follow_mode == FollowMode.MANUAL_AIM:
+                    vx = self._manual_vx
+                    vy = self._manual_vy
+                    vz = self._manual_vz
+                else:
+                    vx = 0.0
+                    vy = 0.0
+                    vz = 0.0
 
                 # Priority-aware timeout: high-priority targets get extended search
                 effective_timeout = self._lost_timeout_s
@@ -926,15 +986,25 @@ class FollowController:
 
             elif state == TargetState.CANDIDATE:
                 yaw_rate = self._search_yaw_rate * 0.5 * search_dir
-                vx = 0.0
-                vy = 0.0
-                vz = 0.0
+                if self._follow_mode == FollowMode.MANUAL_AIM:
+                    vx = self._manual_vx
+                    vy = self._manual_vy
+                    vz = self._manual_vz
+                else:
+                    vx = 0.0
+                    vy = 0.0
+                    vz = 0.0
 
             elif state == TargetState.LOST:
                 yaw_rate *= self._decay_rate
-                vx = 0.0
-                vy = 0.0
-                vz = 0.0
+                if self._follow_mode == FollowMode.MANUAL_AIM:
+                    vx = self._manual_vx
+                    vy = self._manual_vy
+                    vz = self._manual_vz
+                else:
+                    vx = 0.0
+                    vy = 0.0
+                    vz = 0.0
 
             elif state == TargetState.LOCKED:
                 if abs(yaw_rate) < self._min_yaw_rate and abs(self._last_error_x) > 20:
@@ -958,6 +1028,16 @@ class FollowController:
                     vx = 0.0
                     vy = 0.0
 
+            # Altitude safety: clamp vz when altitude is out of bounds
+            if self._telemetry_cache is not None:
+                pos, _ = self._telemetry_cache.get_position()
+                if pos is not None and pos.alt_m is not None:
+                    # Enforce hard limits: 5.0m to 25.0m
+                    if pos.alt_m >= 25.0 and vz > 0.0:
+                        vz = 0.0
+                    elif pos.alt_m <= 5.0 and vz < 0.0:
+                        vz = 0.0
+
             # Final safety clamp
             yaw_rate = max(-self._max_yaw_rate, min(self._max_yaw_rate, yaw_rate))
             vx = max(-self._max_vxy, min(self._max_vxy, vx))
@@ -970,11 +1050,9 @@ class FollowController:
 
             try:
                 if self._command_slot is not None:
-                    from sentinel.runtime.contracts import VelocityCommand
-                    self._command_slot.write(VelocityCommand(
-                        vx=vx, vy=vy, vz=vz, yawspeed=yaw_rate,
-                        source=f"follow_{self._follow_mode.value}",
-                    ))
+                    self._write_velocity_command(
+                        vx, vy, vz, yaw_rate, f"follow_{self._follow_mode.value}",
+                    )
                 else:
                     self._backend.offboard_set_velocity_body(vx, vy, vz, yaw_rate)
             except Exception as exc:
@@ -1017,6 +1095,7 @@ class FollowController:
     def _disengage_offboard(self) -> None:
         if self._command_slot is not None:
             self._offboard_engaged = False
+            self._emit_zero_command("follow_disengage")
             return
         if not self._offboard_engaged:
             return
@@ -1040,4 +1119,8 @@ class FollowController:
             self._current_vx = 0.0
             self._current_vy = 0.0
             self._current_vz = 0.0
+            self._manual_vx = 0.0
+            self._manual_vy = 0.0
+            self._manual_vz = 0.0
         self._stop_loop()
+        self._emit_zero_command("follow_emergency_stop")

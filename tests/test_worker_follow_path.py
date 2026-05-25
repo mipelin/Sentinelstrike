@@ -156,6 +156,25 @@ class TestFollowControllerCommandSink:
         assert isinstance(cmd_val, VelocityCommand)
         assert cmd_val.source.startswith("follow_")
 
+    def test_set_follow_mode_updates_controller(self):
+        fc, _, _ = _make_follow_controller(follow_mode=FollowMode.YAW)
+        fc.set_follow_mode(FollowMode.MANUAL_AIM)
+        assert fc.follow_mode == FollowMode.MANUAL_AIM
+
+    def test_unlock_emits_zero_command(self):
+        fc, slot, _ = _make_follow_controller(follow_mode=FollowMode.STANDOFF)
+        fc.lock_target("TGT-001")
+        time.sleep(0.05)
+        fc.unlock()
+
+        cmd_val, _, _ = slot.read()
+        assert cmd_val is not None
+        assert cmd_val.vx == 0.0
+        assert cmd_val.vy == 0.0
+        assert cmd_val.vz == 0.0
+        assert cmd_val.yawspeed == 0.0
+        assert cmd_val.source in {"follow_unlock", "follow_disengage"}
+
     def test_no_backend_calls_during_follow(self):
         """Verify backend is never called during follow lifecycle."""
         mock_backend = MagicMock()
@@ -203,10 +222,17 @@ class TestFollowControllerCommandSink:
 
     def test_emergency_stop_no_backend(self):
         """emergency_stop works without backend in command-sink mode."""
-        fc, _, _ = _make_follow_controller()
+        fc, slot, _ = _make_follow_controller()
         fc.lock_target("TGT-001")
         fc.emergency_stop()
         assert fc.state == TargetState.UNLOCKED
+        cmd_val, _, _ = slot.read()
+        assert cmd_val is not None
+        assert cmd_val.vx == 0.0
+        assert cmd_val.vy == 0.0
+        assert cmd_val.vz == 0.0
+        assert cmd_val.yawspeed == 0.0
+        assert cmd_val.source == "follow_emergency_stop"
 
 
 # ---------------------------------------------------------------------------

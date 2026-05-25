@@ -16,6 +16,7 @@ pkill -9 -f "QGroundControl" 2>/dev/null && echo "  QGC killed"           || tru
 pkill -9 -f "run_gazebo_yolo_test" 2>/dev/null && echo "  sentinel yolo test killed" || true
 pkill -9 -f "run_gazebo_camera_probe" 2>/dev/null && echo "  sentinel probe killed" || true
 pkill -9 -f "view_gazebo_camera" 2>/dev/null && echo "  sentinel viewer killed" || true
+pkill -9 -f "run_gazebo_traffic" 2>/dev/null && echo "  sentinel traffic killed" || true
 
 sleep 1
 
