@@ -121,6 +121,20 @@ def main() -> None:
             print(f"FAIL: cv2.imwrite failed for {args.save_frame}", file=sys.stderr)
             sys.exit(4)
 
+        # --- Camera orientation sanity check ---
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        h, w = gray.shape
+        top_third = gray[: h // 3, :]
+        bot_third = gray[-(h // 3) :, :]
+        top_mean = float(top_third.mean())
+        bot_mean = float(bot_third.mean())
+        print(f"  Brightness top third: {top_mean:.1f}/255")
+        print(f"  Brightness bot third: {bot_mean:.1f}/255")
+        if top_mean > bot_mean + 50:
+            print(f"  WARNING: frame is much brighter at top than bottom.")
+            print(f"           Camera may be looking UPWARD instead of DOWN.")
+            print(f"           In Gazebo/SDF: positive pitch = DOWN, negative = UP.")
+
     print("OK")
 
 

@@ -78,6 +78,14 @@ geolocalizer:
   min_publish_interval_s: 2.0
   min_movement_m: 5.0
   max_observations_per_track: 50
+  # Camera orientation convention:
+  #   pitch_deg < 0  => camera looks DOWNWARD (e.g. -45.0 = 45° down)
+  #   pitch_deg > 0  => camera looks UPWARD
+  # This matches the Sentinel codebase convention used in geolocalizer,
+  # world_projection, and sensor_pose modules.
+  # NOTE: Gazebo/SDF uses the OPPOSITE sign — positive pitch = nose DOWN.
+  # The Sentinel x500_mono_cam SDF model (configs/gz/models/x500_mono_cam)
+  # uses +0.785 rad (+45°) to achieve the same downward view.
   camera:
     camera_id: cam_001
     width_px: 640
