@@ -874,6 +874,100 @@ class TestReIDTransfer:
 
 
 # ---------------------------------------------------------------------------
+# Metric standoff behavior
+# ---------------------------------------------------------------------------
+
+
+class TestMetricStandoff:
+    """Verify standoff controller uses metric distance when world projection available."""
+
+    def _detection_with_world_pos(self, lat=38.0001, lon=-8.0001, bbox_h=100):
+        return [{
+            "track_id": "TGT-001",
+            "bbox": [320 - 50, 240 - bbox_h // 2, 320 + 50, 240 + bbox_h // 2],
+            "confidence": 0.85,
+            "class": "person",
+            "speed": 0.0,
+            "velocity": [0, 0],
+            "world_position": {"lat": lat, "lon": lon},
+        }]
+
+    def test_metric_retreat_when_too_close(self):
+        """When actual_dist < standoff - deadband, command negative vx."""
+        fc, slot, cache = _make_follow_controller(
+            follow_mode=FollowMode.STANDOFF,
+            standoff_distance_m=15.0,
+            standoff_deadband_m=2.0,
+        )
+        # Target ~6 m north of drone
+        cache.update_position(lat=38.0, lon=-8.0, alt_m=50.0)
+        dets = self._detection_with_world_pos(lat=38.000054, lon=-8.0)
+        fc.lock_target("TGT-001")
+        fc.update_target(dets, 640, 480)
+
+        diag = fc.get_diagnostics()
+        assert diag.standoff_phase == "RETREAT"
+        assert diag.vx < 0.0
+        assert diag.standoff_actual_m > 0.0
+        fc.unlock()
+
+    def test_metric_hold_within_deadband(self):
+        """When actual_dist within deadband, hold position."""
+        fc, slot, cache = _make_follow_controller(
+            follow_mode=FollowMode.STANDOFF,
+            standoff_distance_m=15.0,
+            standoff_deadband_m=2.0,
+        )
+        # Target exactly 15 m north of drone
+        cache.update_position(lat=38.0, lon=-8.0, alt_m=50.0)
+        dets = self._detection_with_world_pos(lat=38.000135, lon=-8.0)
+        fc.lock_target("TGT-001")
+        fc.update_target(dets, 640, 480)
+
+        diag = fc.get_diagnostics()
+        assert diag.standoff_phase in ("SAFE", "ORBITING")
+        assert diag.vx == 0.0
+        assert diag.vy == 0.0
+        fc.unlock()
+
+    def test_metric_approach_when_too_far(self):
+        """When actual_dist > standoff + deadband, command positive vx."""
+        fc, slot, cache = _make_follow_controller(
+            follow_mode=FollowMode.STANDOFF,
+            standoff_distance_m=15.0,
+            standoff_deadband_m=2.0,
+        )
+        # Target 25 m north of drone
+        cache.update_position(lat=38.0, lon=-8.0, alt_m=50.0)
+        dets = self._detection_with_world_pos(lat=38.000225, lon=-8.0)
+        fc.lock_target("TGT-001")
+        fc.update_target(dets, 640, 480)
+
+        diag = fc.get_diagnostics()
+        assert diag.standoff_phase == "APPROACHING"
+        assert diag.vx > 0.0
+        fc.unlock()
+
+    def test_bbox_fallback_when_no_world_position(self):
+        """Without world_position, fall back to bbox-based logic."""
+        fc, slot, cache = _make_follow_controller(
+            follow_mode=FollowMode.STANDOFF,
+            standoff_bbox_height_px=200.0,
+        )
+        cache.update_position(lat=38.0, lon=-8.0, alt_m=50.0)
+        # Small bbox (far away in pixel terms)
+        dets = _detections_with_target(bbox_h=50)
+        fc.lock_target("TGT-001")
+        fc.update_target(dets, 640, 480)
+
+        diag = fc.get_diagnostics()
+        assert diag.standoff_phase == "APPROACHING"
+        assert diag.vx > 0.0
+        assert diag.standoff_actual_m == 0.0  # no world pos
+        fc.unlock()
+
+
+# ---------------------------------------------------------------------------
 # Projection telemetry propagation
 # ---------------------------------------------------------------------------
 

@@ -155,6 +155,8 @@ class FollowController:
         standoff_altitude_m: float = 10.0,
         standoff_approach_speed: float = 0.5,
         standoff_hold_zone: float = 0.15,
+        standoff_deadband_m: float = 2.0,
+        standoff_metric_kp: float = 0.2,
         orbit_on_arrival: bool = True,
         deterrence_marker: bool = False,
     ) -> None:
@@ -198,6 +200,8 @@ class FollowController:
         self._standoff_altitude_m = standoff_altitude_m
         self._standoff_approach_speed = standoff_approach_speed
         self._standoff_hold_zone = standoff_hold_zone
+        self._standoff_deadband_m = standoff_deadband_m
+        self._standoff_metric_kp = standoff_metric_kp
         self._orbit_on_arrival = orbit_on_arrival
         self._deterrence_marker = deterrence_marker
 
@@ -640,27 +644,111 @@ class FollowController:
         self._current_vx = vx
         self._current_vy = vy
 
-    def _compute_standoff_velocity(self, error_x: float, bbox_h: float, frame_h: int) -> None:
-        """Compute safe standoff velocities. Never commands collision course."""
-        # Range estimation via bbox height:
-        # Bigger bbox = closer. standoff_bbox_h is the "at standoff distance" size.
-        # We use a proportional controller that caps at standoff_approach_speed.
+    def _get_actual_standoff_distance_m(self) -> float:
+        """Return metric distance to target if world position + telemetry available, else 0.0."""
+        if self._world_lat is None or self._world_lon is None:
+            return 0.0
+        if self._telemetry_cache is not None:
+            pos, _ = self._telemetry_cache.get_position()
+            if pos is not None:
+                return _haversine_m(pos.lat, pos.lon, self._world_lat, self._world_lon)
+        if self._backend is not None:
+            try:
+                telem = self._backend.get_telemetry()
+                if telem.position is not None:
+                    return _haversine_m(
+                        telem.position.lat, telem.position.lon,
+                        self._world_lat, self._world_lon,
+                    )
+            except Exception:
+                pass
+        return 0.0
 
+    def _compute_standoff_velocity(self, error_x: float, bbox_h: float, frame_h: int) -> None:
+        """Compute safe standoff velocities. Never commands collision course.
+
+        Priority:
+          1. Metric distance from world projection + telemetry (most accurate)
+          2. Bbox height fallback (when metric unavailable)
+        """
+        actual_dist = self._get_actual_standoff_distance_m()
+        use_metric = actual_dist > 0.0
+
+        if use_metric:
+            error_dist = actual_dist - self._standoff_distance_m
+            deadband = self._standoff_deadband_m
+
+            logger.debug(
+                "standoff_logic_metric: dist={:.1f}m tgt={:.1f}m error={:.1f}m deadband={:.1f}m",
+                actual_dist, self._standoff_distance_m, error_dist, deadband,
+            )
+
+            if error_dist < -deadband:
+                # TOO CLOSE — back away
+                self._standoff_phase = "RETREAT"
+                vx = max(-self._standoff_approach_speed, self._standoff_metric_kp * error_dist)
+                logger.info(
+                    "standoff RETREAT (metric): dist={:.1f}m vx={:.3f} m/s",
+                    actual_dist, vx,
+                )
+                self._current_vx = vx
+                self._current_vy = 0.0
+                self._current_vz = 0.0
+                return
+
+            if abs(error_dist) <= deadband:
+                # WITHIN DEADBAND — hold or orbit
+                if self._orbit_on_arrival:
+                    self._standoff_phase = "ORBITING"
+                else:
+                    self._standoff_phase = "SAFE"
+                logger.info(
+                    "standoff HOLD/ORBIT (metric): dist={:.1f}m (tgt={:.1f}m ±{:.1f}m)",
+                    actual_dist, self._standoff_distance_m, deadband,
+                )
+                self._current_vx = 0.0
+                self._current_vy = 0.0
+                self._current_vz = 0.0
+                return
+
+            # TOO FAR — approach
+            self._standoff_phase = "APPROACHING"
+            vx = min(self._standoff_metric_kp * error_dist, self._standoff_approach_speed)
+            vx = max(0.0, min(self._max_vxy, vx))
+
+            # Lateral: only when yaw aligned
+            if abs(error_x) < self._yaw_align_threshold_px:
+                vy = max(-0.3, min(0.3, self._lat_kp * error_x * 0.5))
+            else:
+                vy = 0.0
+
+            self._current_vz = 0.0
+            if self._target_cy is not None and self._target_cy < frame_h * 0.25:
+                self._current_vz = 0.2
+
+            logger.info(
+                "standoff APPROACH (metric): dist={:.1f}m error={:.1f}m vx={:.3f} vy={:.3f} vz={:.3f} m/s",
+                actual_dist, error_dist, vx, vy, self._current_vz,
+            )
+            self._current_vx = vx
+            self._current_vy = vy
+            return
+
+        # ---- BBOX FALLBACK ----
         at_standoff = bbox_h >= self._standoff_bbox_h * (1.0 - self._standoff_hold_zone)
         too_close = bbox_h > self._standoff_bbox_h * 1.3
 
         logger.debug(
-            "standoff_logic: bbox_h={:.1f} standoff_bbox_h={:.1f} at_standoff={} too_close={}",
+            "standoff_logic_bbox: bbox_h={:.1f} standoff_bbox_h={:.1f} at_standoff={} too_close={}",
             bbox_h, self._standoff_bbox_h, at_standoff, too_close,
         )
 
         if too_close:
-            # TOO CLOSE — back away immediately
             self._standoff_phase = "RETREAT"
             overshoot = bbox_h - self._standoff_bbox_h
             vx = -min(self._fwd_kp * overshoot, self._standoff_approach_speed)
             logger.info(
-                "standoff RETREAT: overshoot={:.1f}px vx={:.3f} m/s",
+                "standoff RETREAT (bbox): overshoot={:.1f}px vx={:.3f} m/s",
                 overshoot, vx,
             )
             self._current_vx = vx
@@ -669,14 +757,12 @@ class FollowController:
             return
 
         if at_standoff:
-            # AT STANDOFF — hold or orbit
             if self._orbit_on_arrival:
                 self._standoff_phase = "ORBITING"
-                # Orbit handled in follow_loop — velocity set to 0 here
             else:
                 self._standoff_phase = "SAFE"
             logger.info(
-                "standoff HOLD/ORBIT: bbox_h={:.1f}px (target >= {:.1f}px)",
+                "standoff HOLD/ORBIT (bbox): bbox_h={:.1f}px (target >= {:.1f}px)",
                 bbox_h, self._standoff_bbox_h * (1.0 - self._standoff_hold_zone),
             )
             self._current_vx = 0.0
@@ -684,28 +770,23 @@ class FollowController:
             self._current_vz = 0.0
             return
 
-        # APPROACHING — creep toward standoff, conservative speed
+        # APPROACHING
         self._standoff_phase = "APPROACHING"
         size_error = self._standoff_bbox_h - bbox_h
         vx = min(self._fwd_kp * size_error, self._standoff_approach_speed)
-
-        # Never exceed max_vxy
         vx = max(0.0, min(self._max_vxy, vx))
 
-        # Lateral: only when yaw aligned, very conservative
         if abs(error_x) < self._yaw_align_threshold_px:
             vy = max(-0.3, min(0.3, self._lat_kp * error_x * 0.5))
         else:
             vy = 0.0
 
-        # Altitude: maintain standoff altitude above target
-        # If target near top of frame, we might be too low — climb
         self._current_vz = 0.0
         if self._target_cy is not None and self._target_cy < frame_h * 0.25:
-            self._current_vz = 0.2  # gentle climb
+            self._current_vz = 0.2
 
         logger.info(
-            "standoff APPROACH: size_error={:.1f}px vx={:.3f} vy={:.3f} vz={:.3f} m/s",
+            "standoff APPROACH (bbox): size_error={:.1f}px vx={:.3f} vy={:.3f} vz={:.3f} m/s",
             size_error, vx, vy, self._current_vz,
         )
         self._current_vx = vx
@@ -889,21 +970,11 @@ class FollowController:
             if log_counter >= int(self._offboard_hz * 2.0):
                 log_counter = 0
                 if self._follow_mode == FollowMode.STANDOFF and world_lat is not None:
-                    actual_dist = 0.0
-                    if self._telemetry_cache is not None:
-                        pos, _ = self._telemetry_cache.get_position()
-                        if pos is not None:
-                            actual_dist = _haversine_m(pos.lat, pos.lon, world_lat, world_lon)
-                    elif self._backend is not None:
-                        try:
-                            telem = self._backend.get_telemetry()
-                            if telem.position is not None:
-                                actual_dist = _haversine_m(telem.position.lat, telem.position.lon, world_lat, world_lon)
-                        except Exception:
-                            pass
+                    actual_dist = self._get_actual_standoff_distance_m()
+                    mode_str = "metric" if actual_dist > 0.0 else "bbox"
                     logger.info(
-                        "standoff_trend: dist={:.1f}m (tgt={:.1f}m) phase={} bbox_h={:.1f}px cmd=[{:.2f},{:.2f},{:.2f}]",
-                        actual_dist, self._standoff_distance_m, standoff_phase, bbox_h, vx, vy, vz,
+                        "standoff_trend: mode={} dist={:.1f}m (tgt={:.1f}m) phase={} bbox_h={:.1f}px cmd=[{:.2f},{:.2f},{:.2f}]",
+                        mode_str, actual_dist, self._standoff_distance_m, standoff_phase, bbox_h, vx, vy, vz,
                     )
 
             geofence_counter += 1
