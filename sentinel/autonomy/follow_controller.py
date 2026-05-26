@@ -649,11 +649,20 @@ class FollowController:
         at_standoff = bbox_h >= self._standoff_bbox_h * (1.0 - self._standoff_hold_zone)
         too_close = bbox_h > self._standoff_bbox_h * 1.3
 
+        logger.debug(
+            "standoff_logic: bbox_h={:.1f} standoff_bbox_h={:.1f} at_standoff={} too_close={}",
+            bbox_h, self._standoff_bbox_h, at_standoff, too_close,
+        )
+
         if too_close:
             # TOO CLOSE — back away immediately
             self._standoff_phase = "RETREAT"
             overshoot = bbox_h - self._standoff_bbox_h
             vx = -min(self._fwd_kp * overshoot, self._standoff_approach_speed)
+            logger.info(
+                "standoff RETREAT: overshoot={:.1f}px vx={:.3f} m/s",
+                overshoot, vx,
+            )
             self._current_vx = vx
             self._current_vy = 0.0
             self._current_vz = 0.0
@@ -666,6 +675,10 @@ class FollowController:
                 # Orbit handled in follow_loop — velocity set to 0 here
             else:
                 self._standoff_phase = "SAFE"
+            logger.info(
+                "standoff HOLD/ORBIT: bbox_h={:.1f}px (target >= {:.1f}px)",
+                bbox_h, self._standoff_bbox_h * (1.0 - self._standoff_hold_zone),
+            )
             self._current_vx = 0.0
             self._current_vy = 0.0
             self._current_vz = 0.0
@@ -691,6 +704,10 @@ class FollowController:
         if self._target_cy is not None and self._target_cy < frame_h * 0.25:
             self._current_vz = 0.2  # gentle climb
 
+        logger.info(
+            "standoff APPROACH: size_error={:.1f}px vx={:.3f} vy={:.3f} vz={:.3f} m/s",
+            size_error, vx, vy, self._current_vz,
+        )
         self._current_vx = vx
         self._current_vy = vy
 
@@ -755,6 +772,26 @@ class FollowController:
 
             standoff_ok = self._last_bbox_height >= self._standoff_bbox_h * 0.85
 
+            # Compute actual standoff distance from world positions if available
+            standoff_actual_m = 0.0
+            if self._world_lat is not None and self._world_lon is not None:
+                if self._telemetry_cache is not None:
+                    pos, _ = self._telemetry_cache.get_position()
+                    if pos is not None:
+                        standoff_actual_m = _haversine_m(
+                            pos.lat, pos.lon, self._world_lat, self._world_lon,
+                        )
+                elif self._backend is not None:
+                    try:
+                        telem = self._backend.get_telemetry()
+                        if telem.position is not None:
+                            standoff_actual_m = _haversine_m(
+                                telem.position.lat, telem.position.lon,
+                                self._world_lat, self._world_lon,
+                            )
+                    except Exception:
+                        pass
+
             return FollowDiagnostics(
                 state=self._state,
                 follow_mode=self._follow_mode,
@@ -783,6 +820,7 @@ class FollowController:
                 standoff_phase=self._standoff_phase,
                 standoff_target_m=self._standoff_distance_m,
                 standoff_altitude_m=self._standoff_altitude_m,
+                standoff_actual_m=standoff_actual_m,
                 deterrence_active=self._deterrence_marker and standoff_ok,
                 world_position={"lat": self._world_lat, "lon": self._world_lon} if self._world_lat else None,
                 world_velocity={"speed_mps": self._world_speed_mps, "heading_rad": self._world_heading_rad} if self._world_speed_mps > 0 else None,
@@ -827,6 +865,7 @@ class FollowController:
             return
 
         geofence_counter = 0
+        log_counter = 0
 
         while not self._stop_event.is_set():
             t0 = time.monotonic()
@@ -841,6 +880,31 @@ class FollowController:
                 tracker_age = time.monotonic() - self._tracker_time if self._tracker_time > 0 else 999.0
                 lost_time = self._lost_time
                 standoff_phase = self._standoff_phase
+                bbox_h = self._last_bbox_height
+                world_lat = self._world_lat
+                world_lon = self._world_lon
+
+            # Periodic distance / command logging (every ~2 s)
+            log_counter += 1
+            if log_counter >= int(self._offboard_hz * 2.0):
+                log_counter = 0
+                if self._follow_mode == FollowMode.STANDOFF and world_lat is not None:
+                    actual_dist = 0.0
+                    if self._telemetry_cache is not None:
+                        pos, _ = self._telemetry_cache.get_position()
+                        if pos is not None:
+                            actual_dist = _haversine_m(pos.lat, pos.lon, world_lat, world_lon)
+                    elif self._backend is not None:
+                        try:
+                            telem = self._backend.get_telemetry()
+                            if telem.position is not None:
+                                actual_dist = _haversine_m(telem.position.lat, telem.position.lon, world_lat, world_lon)
+                        except Exception:
+                            pass
+                    logger.info(
+                        "standoff_trend: dist={:.1f}m (tgt={:.1f}m) phase={} bbox_h={:.1f}px cmd=[{:.2f},{:.2f},{:.2f}]",
+                        actual_dist, self._standoff_distance_m, standoff_phase, bbox_h, vx, vy, vz,
+                    )
 
             geofence_counter += 1
             if geofence_counter >= int(self._offboard_hz):

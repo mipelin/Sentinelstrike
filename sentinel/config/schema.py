@@ -167,6 +167,8 @@ class VideoSourceConfig(BaseModel):
     file_path: str = "data/videos/demo.mp4"
     webcam_index: int = 0
     rtsp_url: str = ""
+    gazebo_camera_topic: str = ""
+    gazebo_world_name: str = "default"
     reconnect_enabled: bool = True
     reconnect_interval_s: float = 5.0
     frame_width: int | None = None
@@ -176,8 +178,8 @@ class VideoSourceConfig(BaseModel):
     @field_validator("source_type")
     @classmethod
     def _validate_source_type(cls, v: str) -> str:
-        if v not in ("file", "webcam", "rtsp"):
-            raise ValueError(f"Unsupported source_type: {v} (expected file, webcam, or rtsp)")
+        if v not in ("file", "webcam", "rtsp", "gazebo_camera"):
+            raise ValueError(f"Unsupported source_type: {v} (expected file, webcam, rtsp, or gazebo_camera)")
         return v
 
 

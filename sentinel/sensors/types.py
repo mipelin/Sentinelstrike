@@ -10,6 +10,7 @@ class VideoSourceType(StrEnum):
     FILE = "file"
     WEBCAM = "webcam"
     RTSP = "rtsp"
+    GAZEBO_CAMERA = "gazebo_camera"
 
 
 @dataclass

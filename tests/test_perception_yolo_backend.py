@@ -37,7 +37,8 @@ def test_ensure_model_returns_original_if_not_found(tmp_path):
 
 
 def test_constructor_fails_without_ultralytics():
-    if "ultralytics" in sys.modules:
+    import importlib.util
+    if importlib.util.find_spec("ultralytics") is not None:
         pytest.skip("ultralytics is installed — skipping no-ultralytics test")
     with pytest.raises(RuntimeError, match="pip install"):
         from sentinel.perception.yolo_backend import YoloPerceptionBackend

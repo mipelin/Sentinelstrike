@@ -13,9 +13,21 @@ def create_video_source(
     config: VideoSourceConfig,
     event_bus: EventBus | None = None,
     mission_id: str = "",
-) -> ManagedVideoSource:
-    """Create a ManagedVideoSource from a VideoSourceConfig."""
+):
+    """Create a video source from a VideoSourceConfig."""
     source_type = VideoSourceType(config.source_type)
+
+    if source_type == VideoSourceType.GAZEBO_CAMERA:
+        from .gazebo_camera_bridge import GazeboCameraBridge
+
+        if not config.gazebo_camera_topic:
+            raise ValueError("gazebo_camera_topic is required when source_type is 'gazebo_camera'")
+        return GazeboCameraBridge(
+            topic=config.gazebo_camera_topic,
+            event_bus=event_bus,
+            mission_id=mission_id,
+            target_fps=config.target_fps,
+        )
 
     label = config.source_type
     kwargs: dict = {
