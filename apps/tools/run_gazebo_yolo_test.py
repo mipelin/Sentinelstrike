@@ -1716,6 +1716,8 @@ def main() -> None:
                     args.follow_track = best["track_id"]
                     if follow_controller:
                         follow_controller.lock_target(args.follow_track)
+                    if flight_bridge:
+                        _enable_autonomy_safe(flight_bridge, args.min_airborne_alt)
                     print(f"Auto-follow: locked on {args.follow_track} (priority={best.get('priority_score', 0):.2f})")
 
         # Draw overlay
