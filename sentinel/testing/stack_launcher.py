@@ -130,7 +130,7 @@ class SimStackLauncher:
         world = self.normalize_world_name(world)
         deadline = time.monotonic() + timeout_s
         cmd = [
-            "python3",
+            sys.executable,
             "-m",
             "apps.tools.probe_gazebo_topic_rate",
             "--stats",
@@ -139,17 +139,21 @@ class SimStackLauncher:
             "--seconds",
             "3",
         ]
+        env = self.build_env()
         while time.monotonic() < deadline:
             result = subprocess.run(
                 cmd,
                 cwd=self.sentinel_dir,
                 capture_output=True,
                 text=True,
+                env=env,
             )
             output = (result.stdout or "") + (result.stderr or "")
             if "OK: simulation running" in output:
                 print("[STACK] /clock validation passed")
                 return True
+            if output.strip():
+                print(f"[STACK] /clock probe output: {output.strip()[:200]}")
             time.sleep(2)
         print("[STACK] /clock validation failed")
         return False

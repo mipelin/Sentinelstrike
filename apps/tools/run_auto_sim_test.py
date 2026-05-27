@@ -270,7 +270,7 @@ def main() -> None:
             if not launcher.start(world=world_name, spawn_pose=args.spawn_pose, no_qgc=True):
                 raise RuntimeError("Failed to start PX4 SITL + Gazebo stack")
 
-        if not launcher.wait_for_clock(world_name, timeout_s=30.0):
+        if not launcher.wait_for_clock(world_name, timeout_s=90.0):
             raise RuntimeError("Gazebo /clock validation failed")
 
         if not launcher.validate_camera(camera_topic, timeout_s=args.camera_timeout, save_frame=str(camera_frame_path)):
