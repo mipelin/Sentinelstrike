@@ -1702,8 +1702,8 @@ def main() -> None:
             follow_diag = follow_controller.get_diagnostics()
 
         # Auto-follow nearest person (priority-aware when behavioral data available)
-        if args.auto_follow_nearest_person and args.follow_track is None and follow_controller is None:
-            if processed == 30 and detections:
+        if args.auto_follow_nearest_person and args.follow_track is None:
+            if processed >= 30 and detections:
                 persons = [d for d in detections if d["class"] == "person" and d.get("track_id")]
                 if persons:
                     # Use priority scoring if behavioral data is available

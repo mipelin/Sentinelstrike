@@ -26,6 +26,9 @@ ISR_LITE_WORLD="1779343687303_isr_rural_camera_lite"
 ISR_REALISTIC_LITE_WORLD="1779343687303_isr_rural_realistic_lite"
 ISR_REALISTIC_LITE_V2_WORLD="1779343687303_isr_rural_realistic_lite_v2"
 ISR_DYNAMIC_V3_WORLD="1779343687303_isr_rural_dynamic_v3"
+SIMPLE_SINGLE_PERSON_WORLD="1779343687303_isr_rural_simple_single_person"
+SIMPLE_SINGLE_VEHICLE_WORLD="1779343687303_isr_rural_simple_single_vehicle"
+SIMPLE_PERSON_VEHICLE_SEPARATED_WORLD="1779343687303_isr_rural_simple_person_vehicle_separated"
 MODEL="${PX4_SIM_MODEL:-x500_mono_cam}"
 
 # Default to the world that has working camera rendering
@@ -38,13 +41,19 @@ for arg in "$@"; do
     case "$arg" in
         --isr-world)           WORLD="${ISR_WORLD}" ;;
         --isr-lite)            WORLD="${ISR_LITE_WORLD}"
-                               SPAWN_POSE="${PX4_GZ_MODEL_POSE:-220,-350,20,0,0,0}" ;;
+                               SPAWN_POSE="${PX4_GZ_MODEL_POSE:-220,-350,22,0,0,0}" ;;
         --isr-realistic-lite)  WORLD="${ISR_REALISTIC_LITE_WORLD}"
-                               SPAWN_POSE="${PX4_GZ_MODEL_POSE:-220,-350,20,0,0,0}" ;;
+                               SPAWN_POSE="${PX4_GZ_MODEL_POSE:-220,-350,22,0,0,0}" ;;
         --isr-realistic-lite-v2) WORLD="${ISR_REALISTIC_LITE_V2_WORLD}"
-                                 SPAWN_POSE="${PX4_GZ_MODEL_POSE:-220,-350,20,0,0,0}" ;;
+                                 SPAWN_POSE="${PX4_GZ_MODEL_POSE:-220,-350,22,0,0,0}" ;;
         --isr-dynamic-v3)      WORLD="${ISR_DYNAMIC_V3_WORLD}"
-                                SPAWN_POSE="${PX4_GZ_MODEL_POSE:-220,-350,20,0,0,0}" ;;
+                                SPAWN_POSE="${PX4_GZ_MODEL_POSE:-220,-350,22,0,0,0}" ;;
+        --simple-single-person) WORLD="${SIMPLE_SINGLE_PERSON_WORLD}"
+                                SPAWN_POSE="${PX4_GZ_MODEL_POSE:-220,-350,22,0,0,0}" ;;
+        --simple-single-vehicle) WORLD="${SIMPLE_SINGLE_VEHICLE_WORLD}"
+                                 SPAWN_POSE="${PX4_GZ_MODEL_POSE:-220,-350,22,0,0,0}" ;;
+        --simple-person-vehicle-separated) WORLD="${SIMPLE_PERSON_VEHICLE_SEPARATED_WORLD}"
+                                           SPAWN_POSE="${PX4_GZ_MODEL_POSE:-220,-350,22,0,0,0}" ;;
         --no-qgc)              NO_QGC=1 ;;
         --validate)            VALIDATE=1 ;;
     esac
@@ -81,6 +90,18 @@ elif [ "${WORLD}" = "${ISR_DYNAMIC_V3_WORLD}" ]; then
     echo "  INFO: Using ISR Rural Dynamic V3 world with moving humans, vehicles, and occlusion tree-lines."
     echo "  Drone will spawn at target pose: ${SPAWN_POSE}"
     echo ""
+elif [ "${WORLD}" = "${SIMPLE_SINGLE_PERSON_WORLD}" ]; then
+    echo "  INFO: Using simplified single-person validation world."
+    echo "  Drone will spawn at target pose: ${SPAWN_POSE}"
+    echo ""
+elif [ "${WORLD}" = "${SIMPLE_SINGLE_VEHICLE_WORLD}" ]; then
+    echo "  INFO: Using simplified single-vehicle validation world."
+    echo "  Drone will spawn at target pose: ${SPAWN_POSE}"
+    echo ""
+elif [ "${WORLD}" = "${SIMPLE_PERSON_VEHICLE_SEPARATED_WORLD}" ]; then
+    echo "  INFO: Using simplified separated person+vehicle validation world."
+    echo "  Drone will spawn at target pose: ${SPAWN_POSE}"
+    echo ""
 fi
 
 # Check GPU
@@ -112,6 +133,15 @@ set +u
 source build/px4_sitl_default/rootfs/gz_env.sh
 set -u
 
+# Add Sentinel model overrides so local validation models (person_walking_box, test_vehicle_box) resolve
+SENTINEL_MODELS="${SENTINEL_DIR}/configs/gz/models"
+if [ -d "${SENTINEL_MODELS}" ]; then
+    case ":${GZ_SIM_RESOURCE_PATH}:" in
+        *":${SENTINEL_MODELS}:"*) ;;
+        *) export GZ_SIM_RESOURCE_PATH="${SENTINEL_MODELS}:${GZ_SIM_RESOURCE_PATH}" ;;
+    esac
+fi
+
 # ── FIX 1: Force gz transport to localhost (avoid Docker bridge) ────
 export GZ_IP=127.0.0.1
 
@@ -138,6 +168,7 @@ tmux new-session -d -s sentinel_sim -n "PX4_Gazebo" || true
 # Send setup and launch commands to the tmux session
 tmux send-keys -t sentinel_sim:PX4_Gazebo "cd ${PX4_DIR}" C-m
 tmux send-keys -t sentinel_sim:PX4_Gazebo "source build/px4_sitl_default/rootfs/gz_env.sh" C-m
+tmux send-keys -t sentinel_sim:PX4_Gazebo "export GZ_SIM_RESOURCE_PATH=${SENTINEL_DIR}/configs/gz/models:${GZ_SIM_RESOURCE_PATH}" C-m
 tmux send-keys -t sentinel_sim:PX4_Gazebo "export GZ_IP=127.0.0.1" C-m
 tmux send-keys -t sentinel_sim:PX4_Gazebo "export DISPLAY=:0" C-m
 tmux send-keys -t sentinel_sim:PX4_Gazebo "export XAUTHORITY=/home/mipelin/.Xauthority" C-m
@@ -171,6 +202,20 @@ if [ "${WORLD}" = "${ISR_DYNAMIC_V3_WORLD}" ]; then
     tmux send-keys -t sentinel_sim:Traffic "cd ${SENTINEL_DIR}" C-m
     tmux send-keys -t sentinel_sim:Traffic "source .venv/bin/activate" C-m
     tmux send-keys -t sentinel_sim:Traffic "python3 -m apps.tools.run_gazebo_traffic --world ${WORLD} --scenario dynamic_v3 --hz 15" C-m
+    sleep 2
+elif [ "${WORLD}" = "${SIMPLE_SINGLE_VEHICLE_WORLD}" ]; then
+    echo "Launching single-vehicle traffic controller..."
+    tmux new-window -t sentinel_sim -n "Traffic" || true
+    tmux send-keys -t sentinel_sim:Traffic "cd ${SENTINEL_DIR}" C-m
+    tmux send-keys -t sentinel_sim:Traffic "source .venv/bin/activate" C-m
+    tmux send-keys -t sentinel_sim:Traffic "python3 -m apps.tools.run_gazebo_traffic --world ${WORLD} --scenario simple_single_vehicle --hz 15" C-m
+    sleep 2
+elif [ "${WORLD}" = "${SIMPLE_PERSON_VEHICLE_SEPARATED_WORLD}" ]; then
+    echo "Launching separated person+vehicle traffic controller..."
+    tmux new-window -t sentinel_sim -n "Traffic" || true
+    tmux send-keys -t sentinel_sim:Traffic "cd ${SENTINEL_DIR}" C-m
+    tmux send-keys -t sentinel_sim:Traffic "source .venv/bin/activate" C-m
+    tmux send-keys -t sentinel_sim:Traffic "python3 -m apps.tools.run_gazebo_traffic --world ${WORLD} --scenario simple_person_vehicle_separated --hz 15" C-m
     sleep 2
 fi
 
@@ -221,7 +266,7 @@ if [ "${VALIDATE}" -eq 1 ]; then
         echo "  CAMERA OK: frames are being published!"
     else
         echo "  CAMERA WARNING: no frames on expected topic."
-        ALT_TOPIC=$(gz topic -l 2>/dev/null | grep "camera/image" | head -1)
+        ALT_TOPIC="$(gz topic -l 2>/dev/null | sed -n '/camera\/image/{p;q;}' || true)"
         if [ -n "${ALT_TOPIC}" ]; then
             echo "  Found alternative topic: ${ALT_TOPIC}"
             ALT_CAMERA_SAMPLE="$(timeout 5 gz topic -e -t "${ALT_TOPIC}" 2>&1 | sed -n '1,12p' || true)"
