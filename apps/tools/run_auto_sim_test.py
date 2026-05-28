@@ -41,10 +41,10 @@ def _require_simulation_only(args: argparse.Namespace) -> None:
         sys.exit(2)
 
 
-def _world_topic(launcher: SimStackLauncher, world: str, topic: str | None) -> str:
+def _world_topic(launcher: SimStackLauncher, world: str, topic: str | None, model: str = "x500_mono_cam") -> str:
     if topic:
         return topic
-    return launcher.camera_topic(world)
+    return launcher.camera_topic(world, model=model)
 
 
 def _output_dir(args: argparse.Namespace, repo_root: Path) -> Path:
@@ -97,6 +97,8 @@ def _build_test_cmd(
         "--device",
         args.device,
     ]
+    if hasattr(args, 'confidence') and args.confidence is not None:
+        cmd.extend(["--confidence", str(args.confidence)])
     if args.headless:
         cmd.extend(["--no-display"])
     return cmd
@@ -224,8 +226,10 @@ def main() -> None:
     )
     parser.add_argument("--spawn-pose", default="220,-350,22,0,0,0", help="PX4_GZ_MODEL_POSE for SITL spawn")
     parser.add_argument("--mavlink-url", default="udpin://0.0.0.0:14540", help="MAVSDK connection URL")
+    parser.add_argument("--model", default="x500_mono_cam", help="PX4 Gazebo model name (e.g. x500_mono_cam, sentinel_x500_imx477_cam)")
     parser.add_argument("--model-path", default="yolov8n.pt", help="YOLO model path")
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"], help="Inference device")
+    parser.add_argument("--confidence", type=float, default=None, help="YOLO confidence threshold (default: 0.3)")
     parser.add_argument("--camera-timeout", type=float, default=20.0, help="Seconds to wait for camera frames")
     parser.add_argument("--stack-timeout", type=float, default=240.0, help="Max total time for the YOLO/follow run")
     parser.add_argument("--output-dir", default=None, help="Output directory for logs and metrics")
@@ -247,7 +251,7 @@ def main() -> None:
 
     launcher = SimStackLauncher(sentinel_dir=repo_root)
     world_name = launcher.normalize_world_name(args.world)
-    camera_topic = _world_topic(launcher, world_name, args.topic)
+    camera_topic = _world_topic(launcher, world_name, args.topic, model=args.model)
     env = launcher.build_env(spawn_pose=args.spawn_pose)
     env["PYTHONUNBUFFERED"] = "1"
 
@@ -267,7 +271,7 @@ def main() -> None:
     try:
         if not args.no_stack_launch:
             launcher.stop()
-            if not launcher.start(world=world_name, spawn_pose=args.spawn_pose, no_qgc=True):
+            if not launcher.start(world=world_name, spawn_pose=args.spawn_pose, no_qgc=True, model=args.model):
                 raise RuntimeError("Failed to start PX4 SITL + Gazebo stack")
 
         if not launcher.wait_for_clock(world_name, timeout_s=90.0):

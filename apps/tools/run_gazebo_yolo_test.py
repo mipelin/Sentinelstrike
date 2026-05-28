@@ -56,6 +56,22 @@ try:
 except ImportError:
     _CV2_AVAILABLE = False
 
+# ── Class alias mapping for custom YOLO models ─────────────────────────
+_CLASS_ALIASES: dict[str, str] = {
+    "walker": "person",
+    "pedestrian": "person",
+    "human": "person",
+    "vehicle": "car",
+    "automobile": "car",
+    "auto": "car",
+}
+
+
+def _normalize_class_name(name: str) -> str:
+    """Normalize a raw YOLO class name to Sentinel's canonical COCO name."""
+    return _CLASS_ALIASES.get(name, name)
+
+
 from apps.tools.view_gazebo_camera import FrameState
 def _selectable_targets(detections: list[dict], frame_w: int) -> list[dict]:
     """Return sorted list of selectable tracks for F/Tab target selection.
@@ -267,15 +283,20 @@ def _run_mock_backend(frame: np.ndarray) -> list[dict]:
 
 
 def _extract_detections(results: list, classes: list[str]) -> tuple[list[dict], list]:
-    """Extract detections from YOLO results (detect or track)."""
+    """Extract detections from YOLO results (detect or track).
+
+    Normalizes custom model class names (e.g. walker -> person) before
+    filtering against the expected class list.
+    """
     detections = []
     for r in results:
         if r.boxes is None:
             continue
         for box in r.boxes:
             cls_id = int(box.cls[0])
-            cls_name = r.names[cls_id]
-            if classes and cls_name not in classes:
+            raw_name = r.names[cls_id]
+            norm_name = _normalize_class_name(raw_name)
+            if classes and norm_name not in classes:
                 continue
             x1, y1, x2, y2 = box.xyxy[0].tolist()
             conf = float(box.conf[0])
@@ -283,7 +304,8 @@ def _extract_detections(results: list, classes: list[str]) -> tuple[list[dict], 
             if hasattr(box, "id") and box.id is not None:
                 track_id = int(box.id[0])
             detections.append({
-                "class": cls_name,
+                "class": norm_name,
+                "raw_class": raw_name,
                 "confidence": conf,
                 "bbox": [x1, y1, x2, y2],
                 "track_id": track_id,
@@ -1146,6 +1168,14 @@ def main() -> None:
             sys.exit(1)
         yolo_model = YOLO(args.model_path)
         print(f"Model: {args.model_path}")
+        model_classes = getattr(yolo_model, "names", {})
+        if model_classes:
+            print(f"  Model classes: {dict(model_classes)}")
+            aliases = {k: v for k, v in _CLASS_ALIASES.items() if k in model_classes.values()}
+            if aliases:
+                print(f"  Class aliases enabled: {aliases}")
+            else:
+                print(f"  Class aliases: none needed")
 
     # Setup IoU tracker if requested
     iou_tracker = None
@@ -1418,6 +1448,7 @@ def main() -> None:
     print(f"Connected. Processing {args.max_frames} frames with {args.backend} backend...")
     print(f"  Classes: {args.classes}")
     print(f"  Confidence: {args.confidence}")
+    print(f"  Class aliases: {_CLASS_ALIASES}")
     print(f"  Tracking: {args.track or 'disabled'}")
     if args.follow_track:
         print(f"  Follow target: {args.follow_track} (mode: {args.follow_mode})")
@@ -1436,6 +1467,7 @@ def main() -> None:
     processed = 0
     total_detections = 0
     class_counts: Counter = Counter()
+    raw_class_counts: Counter = Counter()
     conf_values: list[float] = []
     active_track_ids: set[int | str] = set()
     first_person_frame = -1
@@ -1655,6 +1687,7 @@ def main() -> None:
 
         for d in detections:
             class_counts[d["class"]] += 1
+            raw_class_counts[d.get("raw_class", d["class"])] += 1
             conf_values.append(d["confidence"])
             class_confidences[d["class"]].append(d["confidence"])
             if d.get("track_id") is not None:
@@ -2189,11 +2222,15 @@ def main() -> None:
         print(f"    Targets tracked:      {geospatial.target_count}")
         print(f"    Total trail points:   {geospatial.total_trail_points}")
     print()
-    print("  Detection counts by class:")
+    print("  Detection counts by class (normalized):")
     for cls, count in class_counts.most_common():
         tracks_count = len(class_track_ids[cls])
         avg_conf = sum(class_confidences[cls]) / len(class_confidences[cls]) if class_confidences[cls] else 0.0
         print(f"    {cls}: detections={count}, tracks={tracks_count}, avg_conf={avg_conf:.3f}")
+    if raw_class_counts:
+        print("  Raw class counts:")
+        for cls, count in raw_class_counts.most_common():
+            print(f"    {cls}: {count}")
     if first_person_frame != -1:
         print(f"  First person detection frame index: {first_person_frame}")
     else:

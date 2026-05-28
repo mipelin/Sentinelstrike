@@ -18,6 +18,19 @@ from sentinel.runtime.blackboard import LatestSlot
 from sentinel.runtime.contracts import DetectionSet, FrameSnapshot
 from sentinel.runtime.worker import Worker
 
+_CLASS_ALIASES = {
+    "walker": "person",
+    "pedestrian": "person",
+    "human": "person",
+    "vehicle": "car",
+    "automobile": "car",
+    "auto": "car",
+}
+
+
+def _normalize_class_name(name: str) -> str:
+    return _CLASS_ALIASES.get(name, name)
+
 
 class PerceptionWorker(Worker):
     """YOLO inference worker.
@@ -169,7 +182,8 @@ class PerceptionWorker(Worker):
                 continue
             for box in r.boxes:
                 cls_id = int(box.cls[0])
-                cls_name = r.names[cls_id]
+                raw_cls_name = r.names[cls_id]
+                cls_name = _normalize_class_name(raw_cls_name)
                 if self._classes and cls_name not in self._classes:
                     continue
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
@@ -179,6 +193,7 @@ class PerceptionWorker(Worker):
                     track_id = int(box.id[0])
                 detections.append({
                     "class": cls_name,
+                    "raw_class": raw_cls_name,
                     "confidence": conf,
                     "bbox": [x1, y1, x2, y2],
                     "track_id": track_id,

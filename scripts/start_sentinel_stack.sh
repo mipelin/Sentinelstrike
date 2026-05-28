@@ -37,8 +37,15 @@ WORLD="default"
 NO_QGC=0
 VALIDATE=0
 SPAWN_POSE=""
+NEXT_ARG_IS_MODEL=0
 for arg in "$@"; do
+    if [ "${NEXT_ARG_IS_MODEL}" -eq 1 ]; then
+        MODEL="${arg}"
+        NEXT_ARG_IS_MODEL=0
+        continue
+    fi
     case "$arg" in
+        --model)               NEXT_ARG_IS_MODEL=1 ;;
         --isr-world)           WORLD="${ISR_WORLD}" ;;
         --isr-lite)            WORLD="${ISR_LITE_WORLD}"
                                SPAWN_POSE="${PX4_GZ_MODEL_POSE:-220,-350,22,0,0,0}" ;;

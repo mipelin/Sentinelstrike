@@ -29,27 +29,42 @@ OLD_JOINT_POSE_ALT = '<pose relative_to="base_link">0.12 0.03 0.242 0 0 0</pose>
 NEW_INCLUDE_POSE_ALT = "<pose>0.12 0.03 0.242 0 0.785 0</pose>"
 NEW_JOINT_POSE_ALT = '<pose relative_to="base_link">0.12 0.03 0.242 0 0.785 0</pose>'
 
+# Wrong poses that may have been introduced by experiments (UP instead of DOWN)
+WRONG_INCLUDE_POSE = "<pose>.12 .03 .242 0 -0.785 0</pose>"
+WRONG_JOINT_POSE = '<pose relative_to="base_link">.12 .03 .242 0 -0.785 0</pose>'
+WRONG_INCLUDE_POSE_ALT = "<pose>0.12 0.03 0.242 0 -0.785 0</pose>"
+WRONG_JOINT_POSE_ALT = '<pose relative_to="base_link">0.12 0.03 0.242 0 -0.785 0</pose>'
+
 
 def patch_model(sdf_path: Path) -> bool:
     text = sdf_path.read_text()
     original = text
 
+    # First fix any wrong (UP) poses
+    wrong_replacements = [
+        (WRONG_INCLUDE_POSE, NEW_INCLUDE_POSE),
+        (WRONG_JOINT_POSE, NEW_JOINT_POSE),
+        (WRONG_INCLUDE_POSE_ALT, NEW_INCLUDE_POSE_ALT),
+        (WRONG_JOINT_POSE_ALT, NEW_JOINT_POSE_ALT),
+    ]
+    for old, new in wrong_replacements:
+        text = text.replace(old, new)
+
+    # Then fix upstream horizontal poses
     replacements = [
         (OLD_INCLUDE_POSE, NEW_INCLUDE_POSE),
         (OLD_JOINT_POSE, NEW_JOINT_POSE),
         (OLD_INCLUDE_POSE_ALT, NEW_INCLUDE_POSE_ALT),
         (OLD_JOINT_POSE_ALT, NEW_JOINT_POSE_ALT),
     ]
-
     for old, new in replacements:
         text = text.replace(old, new)
 
     if text == original:
-        # Already correct (or uses a different format we don't recognise)
-        if "0.785" in text or "0.524" in text or "-0.524" in text:
-            # 0.785 = our fix; 0.524 / -0.524 = previous experiments
+        # Already correct (contains the exact correct poses)
+        if NEW_INCLUDE_POSE in text or NEW_INCLUDE_POSE_ALT in text:
             return False  # no change needed / already patched
-        print(f"WARNING: {sdf_path} does not contain expected horizontal pose string.")
+        print(f"WARNING: {sdf_path} does not contain expected horizontal or correct pose string.")
         print("  Please inspect the file manually.")
         return False
 

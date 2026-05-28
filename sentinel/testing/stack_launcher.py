@@ -66,6 +66,7 @@ class SimStackLauncher:
         world: str = "default",
         spawn_pose: str | None = None,
         no_qgc: bool = True,
+        model: str = "x500_mono_cam",
     ) -> bool:
         """Launch the simulation stack and wait for readiness.
 
@@ -95,6 +96,9 @@ class SimStackLauncher:
 
         if no_qgc:
             cmd.append("--no-qgc")
+
+        if model and model != "x500_mono_cam":
+            cmd.extend(["--model", model])
 
         env = self.build_env(spawn_pose=spawn_pose)
 
